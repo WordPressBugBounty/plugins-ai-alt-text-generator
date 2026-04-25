@@ -1,0 +1,1 @@
+# plugins-ai-alt-text-generator
