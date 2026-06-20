@@ -3,7 +3,7 @@
  * Plugin Name:       AI Alt Text Generator
  * Plugin URI:        https://aialttextgenerator.com/
  * Description:       Uses chatGPT ( GPT-4o-mini ) to automatically create descriptive alt text for your images, improving accessibility and SEO effortlessly.
- * Version:           2.1.2
+ * Version:           2.2.0
  * Author:            migkapa
  * Author URI:        https://github.com/migkapa
  * License:           GPL-2.0+
@@ -19,7 +19,7 @@ if ( ! defined( 'WPINC' ) ) {
 
 define( 'AATG_TEXT_GENERATOR_PATH', plugin_dir_path( __FILE__ ) );
 define( 'AATG_TEXT_GENERATOR_URL', plugin_dir_url( __FILE__ ) );
-define( 'AATG_TEXT_GENERATOR_VERSION', '2.1.2' );
+define( 'AATG_TEXT_GENERATOR_VERSION', '2.2.0' );
 
 /**
  * The code that runs during plugin activation.
@@ -59,6 +59,14 @@ add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'aatg_add_setting
 require AATG_TEXT_GENERATOR_PATH . 'includes/class-ai-alt-text-generator.php';
 require AATG_TEXT_GENERATOR_PATH . 'includes/class-ai-alt-text-generator-restpoint.php';
 require AATG_TEXT_GENERATOR_PATH . 'includes/providers/provider-factory.php';
+
+/**
+ * Register WP-CLI commands when running under WP-CLI.
+ */
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+    require_once AATG_TEXT_GENERATOR_PATH . 'includes/class-ai-alt-text-generator-cli.php';
+    WP_CLI::add_command( 'ai-alt-text', 'AATG_Text_Generator_CLI' );
+}
 
 /**
  * Begins execution of the plugin.

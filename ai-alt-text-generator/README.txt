@@ -4,7 +4,7 @@ Tags: images, alt text, AI, OpenAI, Anthropic, Claude, accessibility, SEO
 Requires at least: 4.6
 Tested up to: 6.8.1
 Requires PHP: 7.0
-Stable tag: 2.1.2
+Stable tag: 2.2.0
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -21,6 +21,31 @@ AI Alt Text Generator utilizes the power of leading AI providers including OpenA
 - **Multi-Language Support**: Generate alt text in different languages
 - **Testing Feature**: Test your prompts before applying them to images
 - **Easy Integration**: Works seamlessly with WordPress media library
+- **WP-CLI Support**: Configure providers and bulk-generate alt text from the command line
+
+**WP-CLI:**
+The plugin registers a `wp ai-alt-text` command suite, making it easy to automate alt text generation across one or many sites.
+
+    # Configure a provider and API key
+    wp ai-alt-text activate --provider=openai --key=sk-xxxxxxxx
+
+    # Bulk-generate alt text for all images missing it
+    wp ai-alt-text generate
+
+    # Regenerate alt text for specific attachments
+    wp ai-alt-text generate --ids=12,34,56 --force
+
+    # Preview what would be processed without calling the API
+    wp ai-alt-text generate --limit=20 --dry-run
+
+    # Show current configuration and coverage
+    wp ai-alt-text status
+
+A typical install/activate/generate workflow:
+
+    wp plugin install ai-alt-text-generator --activate
+    wp ai-alt-text activate --provider=anthropic --key=sk-ant-xxxx
+    wp ai-alt-text generate --yes
 
 **New in Latest Version:**
 - Added support for Anthropic (Claude) AI provider
@@ -67,6 +92,12 @@ Yes, you can customize the prompt used to generate alt text in the plugin settin
 = Which provider is more cost-effective? =
 Both providers offer cost-effective options. OpenAI's GPT-4o-mini and Anthropic's Claude 3 Haiku are optimized for cost efficiency while maintaining high quality output.
 
+= Can I use the plugin from the command line (WP-CLI)? =
+Yes. The plugin registers a `wp ai-alt-text` command suite with three subcommands:
+- `wp ai-alt-text activate --provider=<openai|anthropic> --key=<api-key>` configures the provider and API key. Add `--skip-validation` to save without a live API check. (Each provider uses a fixed default model.)
+- `wp ai-alt-text generate` bulk-generates alt text. Useful flags: `--limit=<n>`, `--provider=<provider>`, `--force` (regenerate existing), `--ids=12,34` (specific attachments), `--dry-run` (preview only), and `--yes` (skip confirmation).
+- `wp ai-alt-text status` shows the active provider, which keys are configured, the prompt/language, and alt text coverage counts.
+
 = Is my data secure? =
 The plugin only sends image data and prompts to the selected AI provider for processing. Please review the privacy policies of OpenAI and/or Anthropic for details on how they handle data.
 
@@ -77,6 +108,14 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.2.0 =
+- Added WP-CLI support: `wp ai-alt-text activate`, `wp ai-alt-text generate`, and `wp ai-alt-text status`
+- Bulk-generate alt text from the command line across many sites
+- `activate` configures the AI provider and API key (with optional live key validation)
+- `generate` supports --limit, --provider override, --force, --ids, --dry-run, and --yes flags
+- `status` reports the active provider, configured keys (masked), prompt/language, and alt text coverage counts
+- WordPress 6.8.1 compatibility maintained
 
 = 2.1.2 =
 - Removed debug logging statements for production release
@@ -135,6 +174,11 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 = 1.0.0 =
 - Initial release
+
+== Upgrade Notice ==
+
+= 2.2.0 =
+Adds WP-CLI support: configure providers and bulk-generate alt text from the command line (wp ai-alt-text activate|generate|status).
 
 == External Service Usage Disclosure ==
 
