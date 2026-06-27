@@ -90,7 +90,6 @@ class AATG_Text_Generator_Admin {
      * @since    1.0.0
      */
     public function add_setting_root_div() {
-        $this->render_pro_upsell();
         echo '<div id="' . esc_attr( $this->plugin_name ) . '"></div>';
     }
 
@@ -102,7 +101,12 @@ class AATG_Text_Generator_Admin {
      * @since 2.3.2
      */
     public function render_pro_upsell() {
-        // Don't upsell to existing Pro customers.
+        // Only on this plugin's own settings page (guideline 11), and never to
+        // existing Pro customers.
+        $screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+        if ( ! $screen || 'toplevel_page_' . $this->plugin_name !== $screen->id ) {
+            return;
+        }
         if ( defined( 'AATG_PRO_VERSION' ) ) {
             return;
         }
@@ -114,7 +118,7 @@ class AATG_Text_Generator_Admin {
             __( 'Coverage analytics dashboard to track progress toward 100%', 'ai-alt-text-generator' ),
         );
         ?>
-        <div style="max-width:1140px;margin:20px auto 0;border:1px solid #dcdcde;border-left:4px solid #6d28d9;border-radius:8px;background:#fff;padding:18px 22px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between;">
+        <div class="notice notice-alt" style="border-left:4px solid #6d28d9;background:#fff;padding:16px 20px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between;">
             <div style="flex:1;min-width:280px;">
                 <p style="margin:0 0 6px;font-size:15px;font-weight:600;">
                     <span style="background:#6d28d9;color:#fff;font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;vertical-align:middle;">PRO</span>
@@ -728,6 +732,18 @@ class AATG_Text_Generator_Admin {
                             'all_alt_text' => array(
                                 'type' => 'boolean',
                                 'default' => $defaults['all_alt_text']
+                            ),
+                            'set_title' => array(
+                                'type' => 'boolean',
+                                'default' => $defaults['set_title']
+                            ),
+                            'set_caption' => array(
+                                'type' => 'boolean',
+                                'default' => $defaults['set_caption']
+                            ),
+                            'set_description' => array(
+                                'type' => 'boolean',
+                                'default' => $defaults['set_description']
                             ),
                             'prompt' => array(
                                 'type' => 'string',

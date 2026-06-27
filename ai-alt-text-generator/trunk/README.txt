@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image seo, wcag, ai
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.4.0
+Stable tag: 2.5.0
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -128,6 +128,14 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.5.0 =
+- New: optionally also set the image Title, Caption, and Description from the generated alt text (toggles on the settings page)
+- Expanded language support from 13 to ~48 languages
+- Settings UI refinements
+
+= 2.4.1 =
+- Fix: the "Upgrade to Pro" notice on the settings page is now fully visible (moved to the standard admin notice area)
 
 = 2.4.0 =
 - WCAG-aligned alt text by default: concise, purpose-driven output with no "image of" filler and a sensible length, better for screen readers and SEO

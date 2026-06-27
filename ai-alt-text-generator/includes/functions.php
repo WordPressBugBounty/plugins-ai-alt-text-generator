@@ -19,6 +19,9 @@ if ( ! function_exists( 'aatg_text_generator_default_options' ) ) :
 			'anthropic_key' => '',
 			'on_upload_alt_text' => false,
 			'all_alt_text' => false,
+			'set_title' => false,
+			'set_caption' => false,
+			'set_description' => false,
 			'prompt' => 'Write concise, descriptive alt text for this image that conveys its purpose and key content for screen-reader users and SEO. Use a single sentence under 125 characters. Do not begin with "image of", "photo of", or "picture of", and do not use quotation marks.',
 			'language' => 'english',
 		);
@@ -95,6 +98,24 @@ if ( ! function_exists( 'aatg_save_generated_alt_text' ) ) :
 		}
 
 		update_post_meta( $attachment_id, '_wp_attachment_image_alt', $alt_text );
+
+		// Optionally mirror the alt text into the attachment's Title / Caption /
+		// Description when those settings are enabled.
+		$opts        = aatg_text_generator_get_options();
+		$post_update = array();
+		if ( ! empty( $opts['set_title'] ) ) {
+			$post_update['post_title'] = $alt_text;
+		}
+		if ( ! empty( $opts['set_caption'] ) ) {
+			$post_update['post_excerpt'] = $alt_text;
+		}
+		if ( ! empty( $opts['set_description'] ) ) {
+			$post_update['post_content'] = $alt_text;
+		}
+		if ( ! empty( $post_update ) ) {
+			$post_update['ID'] = $attachment_id;
+			wp_update_post( $post_update );
+		}
 
 		/**
 		 * Fires after alt text has been generated and saved for an attachment.
