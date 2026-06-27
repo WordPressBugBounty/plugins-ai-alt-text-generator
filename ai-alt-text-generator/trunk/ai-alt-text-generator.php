@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name:       AI Alt Text Generator
- * Plugin URI:        https://aialttextgenerator.com/
+ * Plugin URI:        https://store.lessbutmore.ai
  * Description:       Uses chatGPT ( GPT-4o-mini ) to automatically create descriptive alt text for your images, improving accessibility and SEO effortlessly.
- * Version:           2.2.0
+ * Version:           2.4.0
  * Author:            migkapa
  * Author URI:        https://github.com/migkapa
  * License:           GPL-2.0+
@@ -19,7 +19,7 @@ if ( ! defined( 'WPINC' ) ) {
 
 define( 'AATG_TEXT_GENERATOR_PATH', plugin_dir_path( __FILE__ ) );
 define( 'AATG_TEXT_GENERATOR_URL', plugin_dir_url( __FILE__ ) );
-define( 'AATG_TEXT_GENERATOR_VERSION', '2.2.0' );
+define( 'AATG_TEXT_GENERATOR_VERSION', '2.4.0' );
 
 /**
  * The code that runs during plugin activation.

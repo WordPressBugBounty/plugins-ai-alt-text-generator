@@ -19,7 +19,7 @@ if ( ! function_exists( 'aatg_text_generator_default_options' ) ) :
 			'anthropic_key' => '',
 			'on_upload_alt_text' => false,
 			'all_alt_text' => false,
-			'prompt' => 'Create a SEO optimized alt text for this image. Don\'t include quotes and keep it informative and concise.',
+			'prompt' => 'Write concise, descriptive alt text for this image that conveys its purpose and key content for screen-reader users and SEO. Use a single sentence under 125 characters. Do not begin with "image of", "photo of", or "picture of", and do not use quotation marks.',
 			'language' => 'english',
 		);
 
@@ -55,5 +55,183 @@ if ( ! function_exists( 'aatg_text_generator_get_options' ) ) :
 			}
 			return array_merge( $default_options, $options );
 		}
+	}
+endif;
+
+/**
+ * Persist a generated alt text value for an attachment, applying add-on hooks.
+ *
+ * Centralises the "filter then save then notify" sequence so every generation
+ * path (single image, bulk, on-upload, REST, CLI) exposes the same extension
+ * points to add-ons:
+ *
+ *  - filter `aatg_alt_text`     : adjust the alt text per attachment before saving.
+ *  - action `aatg_after_generate`: react after the alt text is saved (SEO sync, logging…).
+ *
+ * @since 2.3.0
+ *
+ * @param int    $attachment_id Attachment ID.
+ * @param string $alt_text      Generated alt text.
+ * @param array  $context       Request context (e.g. 'source').
+ * @return string The alt text that was saved (possibly filtered); empty string if nothing saved.
+ */
+if ( ! function_exists( 'aatg_save_generated_alt_text' ) ) :
+	function aatg_save_generated_alt_text( $attachment_id, $alt_text, $context = array() ) {
+		$context = array_merge( array( 'attachment_id' => $attachment_id ), $context );
+
+		/**
+		 * Filter the alt text for a specific attachment just before it is saved.
+		 *
+		 * @since 2.3.0
+		 *
+		 * @param string $alt_text      The generated alt text.
+		 * @param int    $attachment_id Attachment ID.
+		 * @param array  $context       Request context.
+		 */
+		$alt_text = apply_filters( 'aatg_alt_text', $alt_text, $attachment_id, $context );
+
+		if ( '' === (string) $alt_text ) {
+			return $alt_text;
+		}
+
+		update_post_meta( $attachment_id, '_wp_attachment_image_alt', $alt_text );
+
+		/**
+		 * Fires after alt text has been generated and saved for an attachment.
+		 *
+		 * Integration point for SEO-plugin sync, coverage tracking, logging, etc.
+		 *
+		 * @since 2.3.0
+		 *
+		 * @param int    $attachment_id Attachment ID.
+		 * @param string $alt_text      The alt text that was saved.
+		 * @param array  $context       Request context.
+		 */
+		do_action( 'aatg_after_generate', $attachment_id, $alt_text, $context );
+
+		return $alt_text;
+	}
+endif;
+
+/**
+ * Get the SEO focus keyphrase for a post from common SEO plugins (Yoast,
+ * Rank Math, SEOPress). Filterable so other SEO plugins (e.g. AIOSEO) can be added.
+ *
+ * @since 2.4.0
+ * @param int $post_id
+ * @return string
+ */
+if ( ! function_exists( 'aatg_get_focus_keyphrase' ) ) :
+	function aatg_get_focus_keyphrase( $post_id ) {
+		$keyphrase = '';
+		$meta_keys = array(
+			'_yoast_wpseo_focuskw',         // Yoast SEO
+			'rank_math_focus_keyword',      // Rank Math (may be a comma list)
+			'_seopress_analysis_target_kw', // SEOPress (may be a comma list)
+		);
+		foreach ( $meta_keys as $key ) {
+			$val = get_post_meta( $post_id, $key, true );
+			if ( ! empty( $val ) ) {
+				$parts     = explode( ',', (string) $val );
+				$keyphrase = trim( wp_strip_all_tags( $parts[0] ) );
+				if ( '' !== $keyphrase ) {
+					break;
+				}
+			}
+		}
+		/**
+		 * Filter the detected focus keyphrase (e.g. to add AIOSEO support).
+		 *
+		 * @since 2.4.0
+		 * @param string $keyphrase
+		 * @param int    $post_id
+		 */
+		return apply_filters( 'aatg_focus_keyphrase', $keyphrase, $post_id );
+	}
+endif;
+
+/**
+ * Enrich the generation prompt with page context + the SEO focus keyphrase of
+ * the post the image belongs to. Hooked onto the plugin's own
+ * `aatg_generate_prompt` filter, so it composes with other prompt filters (e.g.
+ * the Pro add-on's WooCommerce context). Disable via `aatg_enable_context_enrichment`.
+ *
+ * @since 2.4.0
+ * @param string $prompt
+ * @param array  $context Expects 'attachment_id'.
+ * @return string
+ */
+if ( ! function_exists( 'aatg_enrich_prompt_with_context' ) ) :
+	function aatg_enrich_prompt_with_context( $prompt, $context ) {
+		if ( ! apply_filters( 'aatg_enable_context_enrichment', true ) ) {
+			return $prompt;
+		}
+		$attachment_id = isset( $context['attachment_id'] ) ? (int) $context['attachment_id'] : 0;
+		if ( ! $attachment_id ) {
+			return $prompt;
+		}
+		$post_id = (int) wp_get_post_parent_id( $attachment_id );
+		if ( ! $post_id ) {
+			return $prompt;
+		}
+
+		$extra = array();
+		$title = wp_strip_all_tags( get_the_title( $post_id ) );
+		if ( '' !== $title ) {
+			$extra[] = 'For context, this image appears on a page titled "' . $title . '".';
+		}
+		$keyphrase = aatg_get_focus_keyphrase( $post_id );
+		if ( '' !== $keyphrase ) {
+			$extra[] = 'If it fits naturally, incorporate the keyphrase "' . $keyphrase . '" (do not keyword-stuff).';
+		}
+
+		if ( empty( $extra ) ) {
+			return $prompt;
+		}
+		return $prompt . ' ' . implode( ' ', $extra );
+	}
+endif;
+add_filter( 'aatg_generate_prompt', 'aatg_enrich_prompt_with_context', 10, 2 );
+
+/**
+ * Return base64-encoded image data for an attachment at a sensible size.
+ *
+ * Prefers a downscaled size (default "large", ~1024px) over the full-size
+ * original — better cost/latency for vision models and higher quality than the
+ * tiny thumbnail some paths used previously. Falls back to the original file.
+ *
+ * @since 2.4.0
+ * @param int    $attachment_id
+ * @param string $size
+ * @return string Base64 string, or '' on failure.
+ */
+if ( ! function_exists( 'aatg_get_image_base64_for_attachment' ) ) :
+	function aatg_get_image_base64_for_attachment( $attachment_id, $size = 'large' ) {
+		$size = apply_filters( 'aatg_image_size', $size, $attachment_id );
+		$path = '';
+
+		$src = wp_get_attachment_image_src( $attachment_id, $size );
+		if ( $src && ! empty( $src[0] ) ) {
+			$upload    = wp_upload_dir();
+			$candidate = str_replace( $upload['baseurl'], $upload['basedir'], $src[0] );
+			if ( file_exists( $candidate ) ) {
+				$path = $candidate;
+			}
+		}
+		if ( '' === $path ) {
+			$full = get_attached_file( $attachment_id );
+			if ( $full && file_exists( $full ) ) {
+				$path = $full;
+			}
+		}
+		if ( '' === $path ) {
+			return '';
+		}
+
+		$data = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		if ( false === $data ) {
+			return '';
+		}
+		return base64_encode( $data ); // phpcs:ignore
 	}
 endif;

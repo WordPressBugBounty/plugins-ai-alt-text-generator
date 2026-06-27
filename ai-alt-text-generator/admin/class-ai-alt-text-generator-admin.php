@@ -442,20 +442,28 @@ class AATG_Text_Generator_Admin {
                 return '';
             }
 
-            // Get image data using WordPress functions
-            $upload_dir = wp_upload_dir();
-            $image_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $image_url);
-            
-            if (!file_exists($image_path)) {
-                return '';
+            // Prefer a sensibly-sized image for the attachment (higher quality
+            // than a thumbnail, cheaper than the full-size original); fall back
+            // to reading the provided URL.
+            $image_base64 = '';
+            if ( ! empty( $context['attachment_id'] ) && function_exists( 'aatg_get_image_base64_for_attachment' ) ) {
+                $image_base64 = aatg_get_image_base64_for_attachment( (int) $context['attachment_id'] );
             }
+            if ( '' === $image_base64 ) {
+                $upload_dir = wp_upload_dir();
+                $image_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $image_url);
 
-            $image_data = file_get_contents($image_path);
-            if ($image_data === false) {
-                return '';
+                if (!file_exists($image_path)) {
+                    return '';
+                }
+
+                $image_data = file_get_contents($image_path);
+                if ($image_data === false) {
+                    return '';
+                }
+
+                $image_base64 = base64_encode($image_data);
             }
-
-            $image_base64 = base64_encode($image_data);
 
             // Get prompt and language from settings
             $prompt = $options['prompt'] ?? 'Create a SEO optimized alt text for this image. Don\'t include quotes and keep it informative and concise.';

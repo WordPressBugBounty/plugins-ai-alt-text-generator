@@ -264,17 +264,18 @@ class AATG_Text_Generator_Restpoint {
                 $image_base64,
                 $prompt,
                 $language,
-                $api_key
+                $api_key,
+                array('attachment_id' => $item->ID, 'source' => 'bulk')
             );
-            
+
             if (!$result['success']) {
                 throw new Exception($result['message']);
             }
-            
+
             $alt_text = $result['alt_text'];
 
-            // Update the alt text
-            update_post_meta($item->ID, '_wp_attachment_image_alt', $alt_text);
+            // Save the generated alt text (with add-on hooks).
+            aatg_save_generated_alt_text($item->ID, $alt_text, array('source' => 'bulk'));
             $current++;
             update_option('aatg_processing_current', $current);
 

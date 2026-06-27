@@ -1,27 +1,34 @@
 === AI Alt Text Generator ===
 Contributors: migkapa
-Tags: images, alt text, AI, OpenAI, Anthropic, Claude, accessibility, SEO
+Tags: alt text, accessibility, image seo, wcag, ai
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.3.2
+Stable tag: 2.4.0
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
-AI Alt Text Generator leverages the power of artificial intelligence to automatically generate clear and detailed descriptions for images, significantly enhancing website accessibility and SEO. Supporting both OpenAI (GPT-4o-mini) and Anthropic (Claude 3 Haiku) models for the most flexible and cost-effective alt text generation.
+Automatically generate WCAG-friendly image alt text with AI (OpenAI & Anthropic) to boost accessibility compliance (ADA/EAA) and image SEO.
 
 == Description ==
-AI Alt Text Generator utilizes the power of leading AI providers including OpenAI (ChatGPT) and Anthropic (Claude) to automatically generate alt text for images on your WordPress site. This plugin connects to multiple AI APIs to provide intelligent and contextually relevant alt text, making your website more accessible and SEO-friendly.
+AI Alt Text Generator automatically writes clear, descriptive alt text for every image on your WordPress site — improving **accessibility compliance** (WCAG 2.2, ADA, Section 508, and the European Accessibility Act) and **image SEO** at the same time. It uses leading vision AI from OpenAI (GPT-4o-mini) and Anthropic (Claude) with your own API key, so generation is transparent and at-cost with no per-image fees or vendor lock-in.
+
+Alt text is required for accessible, legally compliant websites, and it helps search engines understand your images. But writing it by hand across an entire media library rarely happens — so this plugin does it for you, in bulk or automatically on upload.
+
+It produces concise, **WCAG-aligned** descriptions (no "image of…" filler, sensible length) and can fold in the **page context** and your **SEO focus keyphrase** for sharper, more relevant alt text. It pairs perfectly with accessibility audit tools that flag missing alt text — this is the plugin that fills the gaps.
 
 **Key Features:**
-- **Multi-Provider Support**: Choose between OpenAI and Anthropic AI providers
-- **Cost-Effective Models**: Uses GPT-4o-mini and Claude 3 Haiku for optimal cost-efficiency
-- **Bulk Processing**: Generate alt text for multiple images at once
-- **Custom Prompts**: Customize the AI prompt to match your specific needs
-- **Multi-Language Support**: Generate alt text in different languages
-- **Testing Feature**: Test your prompts before applying them to images
-- **Easy Integration**: Works seamlessly with WordPress media library
-- **WP-CLI Support**: Configure providers and bulk-generate alt text from the command line
+- **Accessibility & compliance**: WCAG-aligned output to support ADA, EAA, and Section 508 requirements
+- **SEO keyphrase integration**: automatically weaves in focus keyphrases from Yoast SEO, Rank Math, and SEOPress (without keyword stuffing)
+- **Page-context aware**: uses the page/post the image belongs to for more relevant descriptions
+- **Multi-Provider Support**: choose between OpenAI and Anthropic — your own API key, no lock-in
+- **Cost-Effective Models**: uses GPT-4o-mini and Claude for optimal cost-efficiency
+- **Bulk Processing**: generate alt text for your whole library at once, or automatically on upload
+- **Custom Prompts**: tailor the AI prompt to your brand and needs
+- **Multi-Language Support**: generate alt text in many languages
+- **Testing Feature**: preview prompts before applying them to images
+- **WP-CLI Support**: configure providers and bulk-generate from the command line
+- **Developer-friendly**: extensible via action/filter hooks for custom integrations and add-ons
 
 **WP-CLI:**
 The plugin registers a `wp ai-alt-text` command suite, making it easy to automate alt text generation across one or many sites.
@@ -121,6 +128,13 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.4.0 =
+- WCAG-aligned alt text by default: concise, purpose-driven output with no "image of" filler and a sensible length, better for screen readers and SEO
+- SEO focus-keyphrase integration: automatically incorporates the keyphrase from Yoast SEO, Rank Math, and SEOPress (filterable; no keyword stuffing)
+- Page-context awareness: uses the title of the page/post an image belongs to for more relevant descriptions
+- Higher-quality, lower-cost image sampling: sends an appropriately sized image instead of a tiny thumbnail or the full-size original
+- Refreshed accessibility-first positioning (WCAG 2.2 / ADA / EAA)
 
 = 2.3.2 =
 - Introduced an optional Pro upgrade: WooCommerce product context, scheduled background scans, and a coverage analytics dashboard (https://store.lessbutmore.ai)
