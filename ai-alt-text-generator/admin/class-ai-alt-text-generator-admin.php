@@ -90,7 +90,49 @@ class AATG_Text_Generator_Admin {
      * @since    1.0.0
      */
     public function add_setting_root_div() {
+        $this->render_pro_upsell();
         echo '<div id="' . esc_attr( $this->plugin_name ) . '"></div>';
+    }
+
+    /**
+     * Render a contextual "upgrade to Pro" card on the plugin's own settings
+     * page. Shown only here (never elsewhere in wp-admin) and hidden when the
+     * Pro add-on is active, per WordPress.org guideline 11.
+     *
+     * @since 2.3.2
+     */
+    public function render_pro_upsell() {
+        // Don't upsell to existing Pro customers.
+        if ( defined( 'AATG_PRO_VERSION' ) ) {
+            return;
+        }
+
+        $url      = 'https://store.lessbutmore.ai';
+        $features = array(
+            __( 'WooCommerce product context for commerce-aware alt text', 'ai-alt-text-generator' ),
+            __( 'Scheduled background scans — new images described automatically, forever', 'ai-alt-text-generator' ),
+            __( 'Coverage analytics dashboard to track progress toward 100%', 'ai-alt-text-generator' ),
+        );
+        ?>
+        <div style="max-width:1140px;margin:20px auto 0;border:1px solid #dcdcde;border-left:4px solid #6d28d9;border-radius:8px;background:#fff;padding:18px 22px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between;">
+            <div style="flex:1;min-width:280px;">
+                <p style="margin:0 0 6px;font-size:15px;font-weight:600;">
+                    <span style="background:#6d28d9;color:#fff;font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;vertical-align:middle;">PRO</span>
+                    <?php esc_html_e( 'Automate alt text at scale', 'ai-alt-text-generator' ); ?>
+                </p>
+                <ul style="margin:8px 0 0;padding:0;list-style:none;color:#50575e;font-size:13px;">
+                    <?php foreach ( $features as $f ) : ?>
+                        <li style="margin:3px 0;">✓ <?php echo esc_html( $f ); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+            <a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener"
+               class="button button-primary"
+               style="background:#6d28d9;border-color:#6d28d9;font-weight:600;">
+                <?php esc_html_e( 'Upgrade to Pro →', 'ai-alt-text-generator' ); ?>
+            </a>
+        </div>
+        <?php
     }
 
 	/**
@@ -288,14 +330,14 @@ class AATG_Text_Generator_Admin {
             }
 
             // Generate alt text using AI provider
-            $alt_text = $this->generate_alt_text_with_ai($image_url);
+            $alt_text = $this->generate_alt_text_with_ai($image_url, array('attachment_id' => $attachment_id, 'source' => 'single'));
             if (empty($alt_text)) {
                 wp_send_json_error('The AI provider failed to generate alt text.');
                 return;
             }
 
-            // Update the alt text
-            update_post_meta($attachment_id, '_wp_attachment_image_alt', $alt_text);
+            // Save the generated alt text (with add-on hooks).
+            $alt_text = $this->save_generated_alt_text($attachment_id, $alt_text, array('source' => 'single'));
 
             wp_send_json_success($alt_text);
 
@@ -352,10 +394,10 @@ class AATG_Text_Generator_Admin {
         $image_url = $this->get_image_url_by_size($post_id, 'thumbnail');
 
         // Generate alt text using the AI provider
-        $alt_text = $this->generate_alt_text_with_ai( $image_url );
+        $alt_text = $this->generate_alt_text_with_ai( $image_url, array('attachment_id' => $post_id, 'source' => 'bulk') );
 
-        // Update the alt text for the media item
-        update_post_meta( $post_id, '_wp_attachment_image_alt', $alt_text );
+        // Save the generated alt text (with add-on hooks).
+        $this->save_generated_alt_text( $post_id, $alt_text, array('source' => 'bulk') );
     }
 
     public function generate_alt_text_on_upload( $attachment_id ) {
@@ -365,14 +407,31 @@ class AATG_Text_Generator_Admin {
             $image_url = $this->get_image_url_by_size($attachment_id, 'thumbnail');
 
             // Generate alt text using AI provider
-            $alt_text = $this->generate_alt_text_with_ai( $image_url );
+            $alt_text = $this->generate_alt_text_with_ai( $image_url, array('attachment_id' => $attachment_id, 'source' => 'upload') );
 
-            // Update the alt text for the media item
-            update_post_meta( $attachment_id, '_wp_attachment_image_alt', $alt_text );
+            // Save the generated alt text (with add-on hooks).
+            $this->save_generated_alt_text( $attachment_id, $alt_text, array('source' => 'upload') );
         }
     }
 
-    public function generate_alt_text_with_ai($image_url) {
+    /**
+     * Persist a generated alt text value, applying add-on hooks.
+     *
+     * Centralises the "filter then save then notify" sequence so every generation
+     * path exposes the same extension points to add-ons.
+     *
+     * @since 2.3.0
+     *
+     * @param int    $attachment_id Attachment ID.
+     * @param string $alt_text      Generated alt text.
+     * @param array  $context       Request context (e.g. 'source').
+     * @return string The alt text that was saved (possibly filtered).
+     */
+    public function save_generated_alt_text( $attachment_id, $alt_text, $context = array() ) {
+        return aatg_save_generated_alt_text( $attachment_id, $alt_text, $context );
+    }
+
+    public function generate_alt_text_with_ai($image_url, $context = array()) {
         try {
             // Get settings
             $options = get_option('aatg_text_generator_options');
@@ -408,7 +467,8 @@ class AATG_Text_Generator_Admin {
                 $image_base64,
                 $prompt,
                 $language,
-                $options[$api_key_field]
+                $options[$api_key_field],
+                $context
             );
             
             if (!$result['success']) {

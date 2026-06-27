@@ -57,3 +57,58 @@ if ( ! function_exists( 'aatg_text_generator_get_options' ) ) :
 		}
 	}
 endif;
+
+/**
+ * Persist a generated alt text value for an attachment, applying add-on hooks.
+ *
+ * Centralises the "filter then save then notify" sequence so every generation
+ * path (single image, bulk, on-upload, REST, CLI) exposes the same extension
+ * points to add-ons:
+ *
+ *  - filter `aatg_alt_text`     : adjust the alt text per attachment before saving.
+ *  - action `aatg_after_generate`: react after the alt text is saved (SEO sync, logging…).
+ *
+ * @since 2.3.0
+ *
+ * @param int    $attachment_id Attachment ID.
+ * @param string $alt_text      Generated alt text.
+ * @param array  $context       Request context (e.g. 'source').
+ * @return string The alt text that was saved (possibly filtered); empty string if nothing saved.
+ */
+if ( ! function_exists( 'aatg_save_generated_alt_text' ) ) :
+	function aatg_save_generated_alt_text( $attachment_id, $alt_text, $context = array() ) {
+		$context = array_merge( array( 'attachment_id' => $attachment_id ), $context );
+
+		/**
+		 * Filter the alt text for a specific attachment just before it is saved.
+		 *
+		 * @since 2.3.0
+		 *
+		 * @param string $alt_text      The generated alt text.
+		 * @param int    $attachment_id Attachment ID.
+		 * @param array  $context       Request context.
+		 */
+		$alt_text = apply_filters( 'aatg_alt_text', $alt_text, $attachment_id, $context );
+
+		if ( '' === (string) $alt_text ) {
+			return $alt_text;
+		}
+
+		update_post_meta( $attachment_id, '_wp_attachment_image_alt', $alt_text );
+
+		/**
+		 * Fires after alt text has been generated and saved for an attachment.
+		 *
+		 * Integration point for SEO-plugin sync, coverage tracking, logging, etc.
+		 *
+		 * @since 2.3.0
+		 *
+		 * @param int    $attachment_id Attachment ID.
+		 * @param string $alt_text      The alt text that was saved.
+		 * @param array  $context       Request context.
+		 */
+		do_action( 'aatg_after_generate', $attachment_id, $alt_text, $context );
+
+		return $alt_text;
+	}
+endif;

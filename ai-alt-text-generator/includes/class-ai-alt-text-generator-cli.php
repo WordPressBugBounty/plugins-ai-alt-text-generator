@@ -361,7 +361,7 @@ class AATG_Text_Generator_CLI extends WP_CLI_Command {
 				continue;
 			}
 
-			$result = AATG_Provider_Factory::generate_alt_text( $provider, $base64, $prompt, $language, $api_key );
+			$result = AATG_Provider_Factory::generate_alt_text( $provider, $base64, $prompt, $language, $api_key, array( 'attachment_id' => $id, 'source' => 'cli' ) );
 
 			// Free the (potentially large) image buffers before the next iteration.
 			unset( $contents, $base64 );
@@ -374,7 +374,7 @@ class AATG_Text_Generator_CLI extends WP_CLI_Command {
 				continue;
 			}
 
-			update_post_meta( $id, '_wp_attachment_image_alt', $result['alt_text'] );
+			aatg_save_generated_alt_text( $id, $result['alt_text'], array( 'source' => 'cli' ) );
 			$succeeded++;
 			$progress->tick();
 		}

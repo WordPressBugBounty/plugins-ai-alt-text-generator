@@ -30,12 +30,25 @@ class AATG_Provider_Factory {
      */
     public static function init() {
         if (empty(self::$providers)) {
-            self::$providers = array(
+            $providers = array(
                 'openai' => new AATG_OpenAI_Provider(),
                 'anthropic' => new AATG_Anthropic_Provider(),
                 // Future providers can be added here
                 // 'google' => new AATG_Google_Provider(),
             );
+
+            /**
+             * Filter the registered AI providers.
+             *
+             * Add-ons can register additional providers (e.g. premium models or a
+             * managed-credit service) by adding an instance of a class that extends
+             * AATG_Abstract_AI_Provider, keyed by its provider name.
+             *
+             * @since 2.3.0
+             *
+             * @param array $providers Associative array of provider_name => AATG_Abstract_AI_Provider instance.
+             */
+            self::$providers = apply_filters('aatg_providers', $providers);
         }
     }
     
@@ -126,9 +139,45 @@ class AATG_Provider_Factory {
      * @param string $api_key
      * @return array
      */
-    public static function generate_alt_text($provider_name, $image_base64, $prompt, $language, $api_key) {
+    public static function generate_alt_text($provider_name, $image_base64, $prompt, $language, $api_key, $context = array()) {
+        /**
+         * Filter the provider, prompt and language just before generation.
+         *
+         * The $context array carries request metadata (e.g. 'attachment_id', 'source')
+         * so add-ons can tailor generation per image — for example injecting WooCommerce
+         * product context into the prompt, or routing premium requests to another provider.
+         *
+         * @since 2.3.0
+         *
+         * @param string $value   The provider name / prompt / language being filtered.
+         * @param array  $context Request context (attachment_id, source, etc.).
+         */
+        $provider_name = apply_filters('aatg_generate_provider', $provider_name, $context);
+        $prompt        = apply_filters('aatg_generate_prompt', $prompt, $context);
+        $language       = apply_filters('aatg_generate_language', $language, $context);
+
+        /**
+         * Short-circuit alt text generation.
+         *
+         * Return a non-null result array (with 'success', 'alt_text' and 'message' keys)
+         * to bypass the built-in providers entirely. This is the integration point for a
+         * managed-credit service or any external generation backend.
+         *
+         * @since 2.3.0
+         *
+         * @param array|null $pre          Short-circuit result, or null to use built-in providers.
+         * @param string     $image_base64 Base64-encoded image.
+         * @param string     $prompt       Generation prompt.
+         * @param string     $language     Target language.
+         * @param array      $context      Request context.
+         */
+        $pre = apply_filters('aatg_pre_generate_alt_text', null, $image_base64, $prompt, $language, $context);
+        if (null !== $pre) {
+            return $pre;
+        }
+
         $provider = self::get_provider($provider_name);
-        
+
         if (!$provider) {
             return array(
                 'success' => false,
@@ -136,8 +185,21 @@ class AATG_Provider_Factory {
                 'message' => 'Provider not found: ' . $provider_name
             );
         }
-        
-        return $provider->generate_alt_text($image_base64, $prompt, $language, $api_key);
+
+        $result = $provider->generate_alt_text($image_base64, $prompt, $language, $api_key);
+
+        /**
+         * Filter the generation result before it is returned to the caller.
+         *
+         * Add-ons can post-process the generated alt text here (e.g. SEO keyword
+         * injection, length trimming, profanity filtering).
+         *
+         * @since 2.3.0
+         *
+         * @param array  $result  Result array with 'success', 'alt_text', 'message'.
+         * @param array  $context Request context.
+         */
+        return apply_filters('aatg_generate_result', $result, $context);
     }
     
     /**

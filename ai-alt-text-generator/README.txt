@@ -2,9 +2,9 @@
 Contributors: migkapa
 Tags: images, alt text, AI, OpenAI, Anthropic, Claude, accessibility, SEO
 Requires at least: 4.6
-Tested up to: 6.8.1
+Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.2.0
+Stable tag: 2.3.2
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -56,6 +56,16 @@ A typical install/activate/generate workflow:
 
 Important: This plugin requires external AI services (OpenAI and/or Anthropic) for its core functionality.
 
+**AI Alt Text Generator Pro (optional upgrade)**
+
+Need automation at scale? The optional Pro add-on builds on this free plugin with:
+- WooCommerce product context for commerce-aware, SEO-rich alt text
+- Scheduled background scans that describe new and existing images automatically
+- A coverage analytics dashboard to track your progress toward 100%
+- Automatic updates and priority support
+
+Learn more at https://store.lessbutmore.ai — the free plugin remains fully functional on its own.
+
 == Installation ==
 
 1. Upload the plugin files to the /wp-content/plugins/ai-alt-text-generator directory, or install the plugin through the WordPress plugins screen directly.
@@ -71,6 +81,9 @@ Important: This plugin requires external AI services (OpenAI and/or Anthropic) f
 
 = Does this plugin require an API key? =
 Yes, you need an API key from either OpenAI or Anthropic (or both) to use this plugin. You can obtain these by signing up at their respective websites.
+
+= Is there a Pro version? =
+Yes. AI Alt Text Generator Pro is an optional add-on that adds WooCommerce product context, scheduled background scans that describe images automatically, a coverage analytics dashboard, automatic updates, and priority support. The free plugin is fully functional on its own. Learn more at https://store.lessbutmore.ai
 
 = What AI providers are supported? =
 The plugin currently supports:
@@ -108,6 +121,21 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.3.2 =
+- Introduced an optional Pro upgrade: WooCommerce product context, scheduled background scans, and a coverage analytics dashboard (https://store.lessbutmore.ai)
+- Added contextual Pro information on the plugin's own settings page (shown only there; hidden when Pro is active)
+
+= 2.3.1 =
+- Updated the plugin homepage link
+- Corrected the stable tag so the 2.3.x release is delivered to all sites
+
+= 2.3.0 =
+- Added developer extensibility hooks so companion add-ons can extend alt text generation without modifying the plugin
+- New filters: aatg_providers, aatg_generate_provider, aatg_generate_prompt, aatg_generate_language, aatg_pre_generate_alt_text, aatg_generate_result, and aatg_alt_text
+- New action: aatg_after_generate (fires after alt text is generated and saved)
+- Introduced a shared aatg_save_generated_alt_text() helper used across the single, bulk, on-upload, REST, and WP-CLI paths
+- No changes to existing behavior; tested up to WordPress 6.9
 
 = 2.2.0 =
 - Added WP-CLI support: `wp ai-alt-text activate`, `wp ai-alt-text generate`, and `wp ai-alt-text status`
