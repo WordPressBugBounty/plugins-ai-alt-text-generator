@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image seo, wcag, ai
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.5.2
+Stable tag: 2.5.3
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -128,6 +128,9 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.5.3 =
+- Settings: managed credits (no API key needed) is now the recommended option, shown first; using your own API key is presented as an "Advanced" option below
 
 = 2.5.2 =
 - Fix: the "Upgrade to Pro" panel now renders inside the settings screen so it's always fully visible (the previous admin-notice version could be covered by the settings header)
