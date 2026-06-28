@@ -22,6 +22,9 @@ if ( ! function_exists( 'aatg_text_generator_default_options' ) ) :
 			'set_title' => false,
 			'set_caption' => false,
 			'set_description' => false,
+			'managed_mode' => false,
+			'managed_email' => '',
+			'managed_token' => '',
 			'prompt' => 'Write concise, descriptive alt text for this image that conveys its purpose and key content for screen-reader users and SEO. Use a single sentence under 125 characters. Do not begin with "image of", "photo of", or "picture of", and do not use quotation marks.',
 			'language' => 'english',
 		);
@@ -256,3 +259,143 @@ if ( ! function_exists( 'aatg_get_image_base64_for_attachment' ) ) :
 		return base64_encode( $data ); // phpcs:ignore
 	}
 endif;
+
+/* -------------------------------------------------------------------------- */
+/* Managed credits (optional, no-API-key mode powered by the store)            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Base URL of the managed-credit store. Overridable via the AATG_STORE_URL
+ * constant or the `aatg_store_url` filter.
+ *
+ * @since 2.5.1
+ * @return string
+ */
+if ( ! function_exists( 'aatg_store_url' ) ) :
+	function aatg_store_url() {
+		$url = defined( 'AATG_STORE_URL' ) ? AATG_STORE_URL : 'https://store.lessbutmore.ai';
+		return untrailingslashit( apply_filters( 'aatg_store_url', $url ) );
+	}
+endif;
+
+/**
+ * Whether managed-credit mode is active (enabled + connected).
+ *
+ * @since 2.5.1
+ * @return bool
+ */
+if ( ! function_exists( 'aatg_managed_mode_active' ) ) :
+	function aatg_managed_mode_active() {
+		$o = aatg_text_generator_get_options();
+		return ! empty( $o['managed_mode'] ) && ! empty( $o['managed_token'] );
+	}
+endif;
+
+/**
+ * Generate alt text via the managed store (no provider API key needed).
+ *
+ * @since 2.5.1
+ * @return string|WP_Error Alt text, or WP_Error on failure.
+ */
+if ( ! function_exists( 'aatg_managed_generate' ) ) :
+	function aatg_managed_generate( $token, $image_base64, $prompt, $language, $mime = '' ) {
+		$resp = wp_remote_post( aatg_store_url() . '/api/generate', array(
+			'timeout' => 60,
+			'headers' => array( 'Content-Type' => 'application/json' ),
+			'body'    => wp_json_encode( array(
+				'token'     => $token,
+				'image'     => $image_base64,
+				'mime_type' => $mime ? $mime : 'image/jpeg',
+				'prompt'    => $prompt,
+				'language'  => $language,
+			) ),
+		) );
+		if ( is_wp_error( $resp ) ) {
+			return $resp;
+		}
+		$code = wp_remote_retrieve_response_code( $resp );
+		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+		if ( 200 === $code && ! empty( $data['alt_text'] ) ) {
+			if ( isset( $data['credits_remaining'] ) ) {
+				set_transient( 'aatg_managed_credits', (int) $data['credits_remaining'], HOUR_IN_SECONDS );
+				delete_transient( 'aatg_managed_last_error' );
+			}
+			return $data['alt_text'];
+		}
+		$err = isset( $data['error'] ) ? $data['error'] : 'generation_failed';
+		set_transient( 'aatg_managed_last_error', $err, HOUR_IN_SECONDS );
+		return new WP_Error( 'aatg_managed', $err );
+	}
+endif;
+
+/**
+ * Register (or re-connect) a free managed-credit account for this site.
+ *
+ * @since 2.5.1
+ * @return array|WP_Error Store response (token, status, plan, credits) or WP_Error.
+ */
+if ( ! function_exists( 'aatg_managed_register' ) ) :
+	function aatg_managed_register( $email, $site_url ) {
+		$resp = wp_remote_post( aatg_store_url() . '/api/credits/register', array(
+			'timeout' => 30,
+			'headers' => array( 'Content-Type' => 'application/json' ),
+			'body'    => wp_json_encode( array( 'email' => $email, 'site_url' => $site_url ) ),
+		) );
+		if ( is_wp_error( $resp ) ) {
+			return $resp;
+		}
+		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+		if ( 200 === wp_remote_retrieve_response_code( $resp ) && ! empty( $data['token'] ) ) {
+			return $data;
+		}
+		return new WP_Error( 'aatg_managed', isset( $data['error'] ) ? $data['error'] : 'register_failed' );
+	}
+endif;
+
+/**
+ * Fetch the current plan + credit balance for a managed token.
+ *
+ * @since 2.5.1
+ * @return array|WP_Error
+ */
+if ( ! function_exists( 'aatg_managed_status' ) ) :
+	function aatg_managed_status( $token ) {
+		$resp = wp_remote_post( aatg_store_url() . '/api/credits/status', array(
+			'timeout' => 20,
+			'headers' => array( 'Content-Type' => 'application/json' ),
+			'body'    => wp_json_encode( array( 'token' => $token ) ),
+		) );
+		if ( is_wp_error( $resp ) ) {
+			return $resp;
+		}
+		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+		if ( 200 === wp_remote_retrieve_response_code( $resp ) && ! empty( $data['ok'] ) ) {
+			return $data;
+		}
+		return new WP_Error( 'aatg_managed', isset( $data['error'] ) ? $data['error'] : 'status_failed' );
+	}
+endif;
+
+/**
+ * Short-circuit generation through the managed store when managed mode is on.
+ * Hooked on the plugin's own `aatg_pre_generate_alt_text` filter.
+ *
+ * @since 2.5.1
+ */
+if ( ! function_exists( 'aatg_managed_pre_generate' ) ) :
+	function aatg_managed_pre_generate( $pre, $image_base64, $prompt, $language, $context ) {
+		if ( null !== $pre || ! aatg_managed_mode_active() ) {
+			return $pre;
+		}
+		$o    = aatg_text_generator_get_options();
+		$mime = ! empty( $context['attachment_id'] ) ? get_post_mime_type( (int) $context['attachment_id'] ) : '';
+		$alt  = aatg_managed_generate( $o['managed_token'], $image_base64, $prompt, $language, $mime );
+		if ( is_wp_error( $alt ) || '' === (string) $alt ) {
+			// Graceful: return an empty result rather than falling through to the
+			// (keyless) provider path, which would error.
+			return '';
+		}
+		return $alt;
+	}
+endif;
+add_filter( 'aatg_pre_generate_alt_text', 'aatg_managed_pre_generate', 10, 5 );

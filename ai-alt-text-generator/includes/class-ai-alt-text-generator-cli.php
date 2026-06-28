@@ -235,7 +235,7 @@ class AATG_Text_Generator_CLI extends WP_CLI_Command {
 		$api_key = isset( $options[ $provider . '_key' ] ) ? $options[ $provider . '_key' ] : '';
 
 		// In a dry run we still want to surface a missing key, but we do not abort.
-		if ( empty( $api_key ) && ! $dry_run ) {
+		if ( ! aatg_managed_mode_active() && empty( $api_key ) && ! $dry_run ) {
 			WP_CLI::error(
 				sprintf(
 					/* translators: %1$s: provider name (used twice) */

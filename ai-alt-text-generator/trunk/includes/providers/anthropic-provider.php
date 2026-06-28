@@ -186,11 +186,11 @@ class AATG_Anthropic_Provider extends AATG_Abstract_AI_Provider {
      * @return array
      */
     public function get_supported_models() {
-        return array(
+        return apply_filters( 'aatg_supported_models', array(
             'claude-3-haiku-20240307' => 'Claude 3 Haiku (Cheapest)',
             'claude-3-5-sonnet-20241022' => 'Claude 3.5 Sonnet',
-            'claude-3-7-sonnet-20250219' => 'Claude 3.7 Sonnet'
-        );
+            'claude-3-7-sonnet-20250219' => 'Claude 3.7 Sonnet',
+        ), 'anthropic' );
     }
     
     /**
@@ -199,7 +199,8 @@ class AATG_Anthropic_Provider extends AATG_Abstract_AI_Provider {
      * @return string
      */
     public function get_default_model() {
-        return 'claude-3-haiku-20240307';
+        /** @since 2.5.1 See aatg_default_model in the OpenAI provider. */
+        return apply_filters( 'aatg_default_model', 'claude-3-haiku-20240307', 'anthropic' );
     }
     
     /**

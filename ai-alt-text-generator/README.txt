@@ -4,14 +4,14 @@ Tags: alt text, accessibility, image seo, wcag, ai
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.5.0
+Stable tag: 2.5.1
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
 Automatically generate WCAG-friendly image alt text with AI (OpenAI & Anthropic) to boost accessibility compliance (ADA/EAA) and image SEO.
 
 == Description ==
-AI Alt Text Generator automatically writes clear, descriptive alt text for every image on your WordPress site — improving **accessibility compliance** (WCAG 2.2, ADA, Section 508, and the European Accessibility Act) and **image SEO** at the same time. It uses leading vision AI from OpenAI (GPT-4o-mini) and Anthropic (Claude) with your own API key, so generation is transparent and at-cost with no per-image fees or vendor lock-in.
+AI Alt Text Generator automatically writes clear, descriptive alt text for every image on your WordPress site — improving **accessibility compliance** (WCAG 2.2, ADA, Section 508, and the European Accessibility Act) and **image SEO** at the same time. It uses leading vision AI from OpenAI and Anthropic with your own API key, so generation is transparent and at-cost with no per-image fees or vendor lock-in. You choose the provider and model — the plugin ships with a fast, low-cost default for each.
 
 Alt text is required for accessible, legally compliant websites, and it helps search engines understand your images. But writing it by hand across an entire media library rarely happens — so this plugin does it for you, in bulk or automatically on upload.
 
@@ -22,7 +22,7 @@ It produces concise, **WCAG-aligned** descriptions (no "image of…" filler, sen
 - **SEO keyphrase integration**: automatically weaves in focus keyphrases from Yoast SEO, Rank Math, and SEOPress (without keyword stuffing)
 - **Page-context aware**: uses the page/post the image belongs to for more relevant descriptions
 - **Multi-Provider Support**: choose between OpenAI and Anthropic — your own API key, no lock-in
-- **Cost-Effective Models**: uses GPT-4o-mini and Claude for optimal cost-efficiency
+- **Cost-Effective by default**: ships with a fast, low-cost vision model for each provider — and you can switch to any model your provider offers
 - **Bulk Processing**: generate alt text for your whole library at once, or automatically on upload
 - **Custom Prompts**: tailor the AI prompt to your brand and needs
 - **Multi-Language Support**: generate alt text in many languages
@@ -55,13 +55,12 @@ A typical install/activate/generate workflow:
     wp ai-alt-text generate --yes
 
 **New in Latest Version:**
-- Added support for Anthropic (Claude) AI provider
-- Enhanced provider switching capabilities
-- Individual API key management for each provider
-- Improved testing functionality
-- Better error handling and user feedback
+- Optional managed-credit mode — generate alt text with no API key needed (free tier included)
+- WCAG-aligned output, SEO focus-keyphrase integration (Yoast / Rank Math / SEOPress), and page-context awareness
+- Optionally set the image Title, Caption, and Description from the generated alt text
+- Future-proof model handling (no hard-coded model versions; configurable defaults)
 
-Important: This plugin requires external AI services (OpenAI and/or Anthropic) for its core functionality.
+Important: This plugin uses external AI services (your own OpenAI/Anthropic key, or the optional managed-credit service) to generate alt text.
 
 **AI Alt Text Generator Pro (optional upgrade)**
 
@@ -87,15 +86,16 @@ Learn more at https://store.lessbutmore.ai — the free plugin remains fully fun
 == Frequently Asked Questions ==
 
 = Does this plugin require an API key? =
-Yes, you need an API key from either OpenAI or Anthropic (or both) to use this plugin. You can obtain these by signing up at their respective websites.
+You have two options: use your own OpenAI or Anthropic API key (free — you pay the provider directly at cost), or use the optional managed-credit service that needs no API key at all (with a free tier). Either way works.
+
+= Can I use it without an API key? =
+Yes. Enable "managed credits" in the plugin settings to generate alt text without any API key — the free tier includes 50 images per month, and you can upgrade for more. Learn more at https://store.lessbutmore.ai
 
 = Is there a Pro version? =
 Yes. AI Alt Text Generator Pro is an optional add-on that adds WooCommerce product context, scheduled background scans that describe images automatically, a coverage analytics dashboard, automatic updates, and priority support. The free plugin is fully functional on its own. Learn more at https://store.lessbutmore.ai
 
 = What AI providers are supported? =
-The plugin currently supports:
-- **OpenAI**: GPT-4o-mini, GPT-4o, and GPT-4 Vision Preview models
-- **Anthropic**: Claude 3 Haiku, Claude 3.5 Sonnet, and Claude 3.7 Sonnet models
+You bring your own API key for **OpenAI** or **Anthropic**, and you can use any vision-capable model your provider offers. The plugin ships with a sensible, low-cost default for each provider and lets you change the model anytime in settings — so you're never locked to a specific model if providers add or retire one.
 
 = Can I switch between different AI providers? =
 Yes, you can easily switch between OpenAI and Anthropic providers in the plugin settings. Each provider has its own API key configuration.
@@ -110,7 +110,7 @@ Yes, the AI Alt Text Generator supports bulk processing of images for efficient 
 Yes, you can customize the prompt used to generate alt text in the plugin settings. You can also test your prompts before applying them to images.
 
 = Which provider is more cost-effective? =
-Both providers offer cost-effective options. OpenAI's GPT-4o-mini and Anthropic's Claude 3 Haiku are optimized for cost efficiency while maintaining high quality output.
+Both providers offer fast, low-cost vision models, and the plugin defaults to a cost-efficient model for each. You can switch models anytime in settings to balance cost and quality.
 
 = Can I use the plugin from the command line (WP-CLI)? =
 Yes. The plugin registers a `wp ai-alt-text` command suite with three subcommands:
@@ -128,6 +128,11 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.5.1 =
+- New: optional **managed credits** mode — generate alt text with no API key needed (free 50 images/month via the AI Alt Text Generator service). Bring-your-own-key remains fully supported and free.
+- Future-proofed model handling: no hard-coded model versions; the default model is filterable (aatg_default_model), and the deprecated GPT-4 Vision Preview was removed.
+- Connect and manage a managed-credits account from the General settings tab.
 
 = 2.5.0 =
 - New: optionally also set the image Title, Caption, and Description from the generated alt text (toggles on the settings page)

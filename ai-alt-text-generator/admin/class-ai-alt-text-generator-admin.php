@@ -442,7 +442,7 @@ class AATG_Text_Generator_Admin {
             $provider = $options['ai_provider'] ?? 'openai';
             $api_key_field = $provider . '_key';
             
-            if (empty($options[$api_key_field])) {
+            if (!aatg_managed_mode_active() && empty($options[$api_key_field])) {
                 return '';
             }
 

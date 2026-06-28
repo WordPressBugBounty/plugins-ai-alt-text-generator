@@ -84,6 +84,83 @@ class AATG_Text_Generator_Restpoint {
                 return current_user_can('manage_options');
             },
         ));
+
+        // Managed-credit mode (no API key): connect / status / disconnect.
+        register_rest_route('ai-alt-text-generator/v1', '/managed/connect', array(
+            'methods' => 'POST',
+            'callback' => array($this, 'managed_connect'),
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            },
+        ));
+        register_rest_route('ai-alt-text-generator/v1', '/managed/status', array(
+            'methods' => 'POST',
+            'callback' => array($this, 'managed_status'),
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            },
+        ));
+        register_rest_route('ai-alt-text-generator/v1', '/managed/disconnect', array(
+            'methods' => 'POST',
+            'callback' => array($this, 'managed_disconnect'),
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            },
+        ));
+    }
+
+    /**
+     * Connect (or re-connect) a managed-credit account for this site.
+     * Registers with the store, stores the issued token, and enables managed mode.
+     */
+    public function managed_connect(WP_REST_Request $request) {
+        $email = sanitize_email((string) $request->get_param('email'));
+        if (!is_email($email)) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'A valid email is required'), 400);
+        }
+        $res = aatg_managed_register($email, home_url());
+        if (is_wp_error($res)) {
+            return new WP_REST_Response(array('ok' => false, 'error' => $res->get_error_message()), 502);
+        }
+        $options = aatg_text_generator_get_options();
+        $options['managed_email'] = $email;
+        $options['managed_token'] = $res['token'];
+        $options['managed_mode']  = true;
+        update_option('aatg_text_generator_options', $options);
+
+        return new WP_REST_Response(array(
+            'ok'                => true,
+            'status'            => $res['status'] ?? 'pending',
+            'plan'              => $res['plan'] ?? 'free',
+            'credits_remaining' => $res['credits_remaining'] ?? 0,
+            'monthly_credits'   => $res['monthly_credits'] ?? 0,
+            'emailed'           => !empty($res['emailed']),
+            'email'             => $email,
+        ), 200);
+    }
+
+    /** Report the connected account's plan + balance. */
+    public function managed_status(WP_REST_Request $request) {
+        $options = aatg_text_generator_get_options();
+        if (empty($options['managed_token'])) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'not_connected'), 400);
+        }
+        $res = aatg_managed_status($options['managed_token']);
+        if (is_wp_error($res)) {
+            return new WP_REST_Response(array('ok' => false, 'error' => $res->get_error_message()), 502);
+        }
+        $res['email'] = $options['managed_email'] ?? '';
+        return new WP_REST_Response($res, 200);
+    }
+
+    /** Disconnect: clear the token and disable managed mode. */
+    public function managed_disconnect(WP_REST_Request $request) {
+        $options = aatg_text_generator_get_options();
+        $options['managed_mode']  = false;
+        $options['managed_token'] = '';
+        $options['managed_email'] = '';
+        update_option('aatg_text_generator_options', $options);
+        return new WP_REST_Response(array('ok' => true), 200);
     }
 
     public function start_processing(WP_REST_Request $request) {
@@ -221,7 +298,7 @@ class AATG_Text_Generator_Restpoint {
             $provider = $options['ai_provider'] ?: 'openai';
             $api_key_field = $provider . '_key';
             
-            if (empty($options[$api_key_field])) {
+            if (!aatg_managed_mode_active() && empty($options[$api_key_field])) {
                 throw new Exception('API key for ' . $provider . ' is not configured');
             }
             
@@ -448,12 +525,17 @@ class AATG_Text_Generator_Restpoint {
         $options['available_providers'] = $provider_options;
         $options['default_models'] = $default_models;
 
+        // Never expose the managed-credit token to the frontend; surface a
+        // connected flag instead.
+        $options['managed_connected'] = !empty($options['managed_token']);
+        unset($options['managed_token']);
+
         // Ensure a model is set, if not, use the default for the current provider
         if (empty($options['model'])) {
             $current_provider = $options['ai_provider'] ?? 'openai';
             $options['model'] = $default_models[$current_provider] ?? '';
         }
-        
+
         return new WP_REST_Response($options, 200);
     }
 
@@ -462,12 +544,19 @@ class AATG_Text_Generator_Restpoint {
         
         $defaults = aatg_text_generator_default_options();
         
-        // Remove available_providers from settings if it exists (it's read-only)
-        unset($settings['available_providers']);
-        
+        // Remove read-only / server-managed fields the frontend echoes back.
+        unset($settings['available_providers'], $settings['default_models'], $settings['managed_connected']);
+
+        // Preserve the managed-credit token: it's set via /managed/connect and is
+        // never sent by the settings UI, so don't let a normal save wipe it.
+        $existing = get_option('aatg_text_generator_options', array());
+        if (empty($settings['managed_token']) && !empty($existing['managed_token'])) {
+            $settings['managed_token'] = $existing['managed_token'];
+        }
+
         // Ensure we have all required fields
         $settings = wp_parse_args($settings, $defaults);
-        
+
         // Delete the option first to ensure it's updated
         delete_option('aatg_text_generator_options');
         
@@ -552,7 +641,7 @@ class AATG_Text_Generator_Restpoint {
             $provider = $options['ai_provider'] ?: 'openai';
             $api_key_field = $provider . '_key';
             
-            if (empty($options[$api_key_field])) {
+            if (!aatg_managed_mode_active() && empty($options[$api_key_field])) {
                 return new WP_REST_Response(array(
                     'success' => false,
                     'message' => 'API key for ' . $provider . ' is not configured'

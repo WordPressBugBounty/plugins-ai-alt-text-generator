@@ -156,11 +156,10 @@ class AATG_OpenAI_Provider extends AATG_Abstract_AI_Provider {
      * @return array
      */
     public function get_supported_models() {
-        return array(
+        return apply_filters( 'aatg_supported_models', array(
             'gpt-4o-mini' => 'GPT-4o Mini',
-            'gpt-4-vision-preview' => 'GPT-4 Vision Preview',
-            'gpt-4o' => 'GPT-4o'
-        );
+            'gpt-4o' => 'GPT-4o',
+        ), 'openai' );
     }
     
     /**
@@ -169,7 +168,15 @@ class AATG_OpenAI_Provider extends AATG_Abstract_AI_Provider {
      * @return string
      */
     public function get_default_model() {
-        return 'gpt-4o-mini';
+        /**
+         * Filter the default model for a provider. Lets sites (or a future plugin
+         * update) swap the model without code changes if one is deprecated.
+         *
+         * @since 2.5.1
+         * @param string $model
+         * @param string $provider
+         */
+        return apply_filters( 'aatg_default_model', 'gpt-4o-mini', 'openai' );
     }
     
     /**

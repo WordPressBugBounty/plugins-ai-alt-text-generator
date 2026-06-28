@@ -392,7 +392,7 @@ class AATG_Text_Generator {
 				'Content-Type' => 'application/json',
 			),
 			'body' => json_encode(array(
-				'model' => 'gpt-4-vision-preview',
+				'model' => AATG_Provider_Factory::get_default_model( 'openai' ),
 				'messages' => array(
 					array(
 						'role' => 'user',
