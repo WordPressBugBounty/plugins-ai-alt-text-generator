@@ -530,6 +530,9 @@ class AATG_Text_Generator_Restpoint {
         $options['managed_connected'] = !empty($options['managed_token']);
         unset($options['managed_token']);
 
+        // Let the settings UI show the Pro upsell only when Pro isn't installed.
+        $options['pro_active'] = defined('AATG_PRO_VERSION');
+
         // Ensure a model is set, if not, use the default for the current provider
         if (empty($options['model'])) {
             $current_provider = $options['ai_provider'] ?? 'openai';

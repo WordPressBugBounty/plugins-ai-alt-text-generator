@@ -197,7 +197,6 @@ class AATG_Text_Generator {
 		$this->loader->add_filter( 'handle_bulk_actions-upload', $plugin_admin, 'handle_bulk_action', 10, 3 );
 
         $this->loader->add_action('admin_notices', $plugin_admin, 'show_bulk_processing_notice');
-        $this->loader->add_action('admin_notices', $plugin_admin, 'render_pro_upsell');
 
 	}
 
