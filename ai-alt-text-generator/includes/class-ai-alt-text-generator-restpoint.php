@@ -111,30 +111,75 @@ class AATG_Text_Generator_Restpoint {
 
     /**
      * Connect (or re-connect) a managed-credit account for this site.
-     * Registers with the store, stores the issued token, and enables managed mode.
+     *
+     * Two ways in:
+     *  - Paste an existing API token (from the store dashboard — how paid buyers
+     *    connect). We validate it against the store and store it as-is.
+     *  - Otherwise auto-register a fresh free account (instant trial credits, no
+     *    email required). Email is optional and only used to link a later purchase.
      */
     public function managed_connect(WP_REST_Request $request) {
-        $email = sanitize_email((string) $request->get_param('email'));
-        if (!is_email($email)) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'A valid email is required'), 400);
+        $token = sanitize_text_field((string) $request->get_param('token'));
+
+        // Path 1: connect with a pasted token.
+        if ('' !== $token) {
+            $res = aatg_managed_status($token);
+            if (is_wp_error($res)) {
+                // Business outcome (not a transport error): return 200 so the admin
+                // JS reads the structured fields instead of a thrown apiFetch error.
+                return new WP_REST_Response(array(
+                    'ok'      => false,
+                    'error'   => 'invalid_token',
+                    'message' => __('That token was not recognized. Copy it again from your dashboard.', 'ai-alt-text-generator'),
+                ), 200);
+            }
+            $options = aatg_text_generator_get_options();
+            $options['managed_token']  = $token;
+            $options['managed_mode']   = true;
+            $options['managed_optout'] = false;
+            update_option('aatg_text_generator_options', $options);
+            return new WP_REST_Response(array(
+                'ok'                => true,
+                'status'            => $res['status'] ?? 'active',
+                'plan'              => $res['plan'] ?? 'free',
+                'credits_remaining' => $res['credits_remaining'] ?? 0,
+                'monthly_credits'   => $res['monthly_credits'] ?? 0,
+            ), 200);
         }
-        $res = aatg_managed_register($email, home_url());
+
+        // Path 2: auto-register a free account (email optional).
+        $email = sanitize_email((string) $request->get_param('email'));
+        $res   = aatg_managed_register($email, home_url());
         if (is_wp_error($res)) {
+            // A paid plan already exists for this site: send the user to the
+            // dashboard to copy their token instead of minting a new one.
+            if ('paid_account_exists' === $res->get_error_message()) {
+                // Business outcome: 200 so the admin JS can show the dashboard link.
+                return new WP_REST_Response(array(
+                    'ok'            => false,
+                    'error'         => 'paid_account_exists',
+                    'message'       => __('A paid plan already exists for this site. Sign in to your dashboard, copy your API token, and paste it here.', 'ai-alt-text-generator'),
+                    'dashboard_url' => aatg_store_url() . '/login',
+                ), 200);
+            }
             return new WP_REST_Response(array('ok' => false, 'error' => $res->get_error_message()), 502);
         }
         $options = aatg_text_generator_get_options();
-        $options['managed_email'] = $email;
-        $options['managed_token'] = $res['token'];
-        $options['managed_mode']  = true;
+        if ('' !== $email) {
+            $options['managed_email'] = $email;
+        }
+        $options['managed_token']  = $res['token'];
+        $options['managed_ref']    = isset($res['account_ref']) ? $res['account_ref'] : '';
+        $options['managed_mode']   = true;
+        $options['managed_optout'] = false;
         update_option('aatg_text_generator_options', $options);
 
         return new WP_REST_Response(array(
             'ok'                => true,
-            'status'            => $res['status'] ?? 'pending',
+            'status'            => $res['status'] ?? 'active',
             'plan'              => $res['plan'] ?? 'free',
             'credits_remaining' => $res['credits_remaining'] ?? 0,
             'monthly_credits'   => $res['monthly_credits'] ?? 0,
-            'emailed'           => !empty($res['emailed']),
             'email'             => $email,
         ), 200);
     }
@@ -159,6 +204,8 @@ class AATG_Text_Generator_Restpoint {
         $options['managed_mode']  = false;
         $options['managed_token'] = '';
         $options['managed_email'] = '';
+        // Remember the choice so auto-connect doesn't immediately reconnect.
+        $options['managed_optout'] = true;
         update_option('aatg_text_generator_options', $options);
         return new WP_REST_Response(array('ok' => true), 200);
     }

@@ -1,43 +1,48 @@
 === AI Alt Text Generator ===
 Contributors: migkapa
-Tags: alt text, accessibility, image seo, wcag, ai
+Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.5.3
+Stable tag: 2.5.4
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
-Automatically generate WCAG-friendly image alt text with AI (OpenAI & Anthropic) to boost accessibility compliance (ADA/EAA) and image SEO.
+Bulk-generate WCAG-friendly image alt text with AI — no API key needed. Every site gets free monthly credits for accessibility (ADA/EAA compliance) and image SEO.
 
 == Description ==
-AI Alt Text Generator automatically writes clear, descriptive alt text for every image on your WordPress site — improving **accessibility compliance** (WCAG 2.2, ADA, Section 508, and the European Accessibility Act) and **image SEO** at the same time. It uses leading vision AI from OpenAI and Anthropic with your own API key, so generation is transparent and at-cost with no per-image fees or vendor lock-in. You choose the provider and model — the plugin ships with a fast, low-cost default for each.
+AI Alt Text Generator writes clear, descriptive alt text for every image on your WordPress site — improving **accessibility compliance** (WCAG 2.2, ADA, Section 508, and the European Accessibility Act) and **image SEO** at the same time. It works out of the box: activate the plugin and start generating, **no API key and no signup required**. Every site gets **50 free images per month** through the built-in managed credits service.
 
-Alt text is required for accessible, legally compliant websites, and it helps search engines understand your images. But writing it by hand across an entire media library rarely happens — so this plugin does it for you, in bulk or automatically on upload.
+That makes it a fit for small organizations that need accessible, legally compliant websites but don't want to wrangle developer accounts or AI billing — nonprofits, churches, schools, clinics, and small businesses working toward WCAG / EU Accessibility Act compliance.
 
-It produces concise, **WCAG-aligned** descriptions (no "image of…" filler, sensible length) and can fold in the **page context** and your **SEO focus keyphrase** for sharper, more relevant alt text. It pairs perfectly with accessibility audit tools that flag missing alt text — this is the plugin that fills the gaps.
+Alt text is required for accessible, legally compliant websites, and it helps search engines understand your images. But writing it by hand across an entire media library rarely happens — so this plugin does it for you, in bulk or automatically on upload. It produces concise, **WCAG-aligned** descriptions (no "image of…" filler, sensible length) and can fold in the **page context** and your **SEO focus keyphrase** for sharper, more relevant alt text. It pairs perfectly with accessibility audit tools that flag missing alt text — this is the plugin that fills the gaps.
+
+**How it works — two ways to generate:**
+
+1. **Managed credits (default, recommended)** — No API key, no signup. The plugin connects to the AI Alt Text Generator managed service automatically and gives every site **50 free images per month**. Need more? Affordable paid credit plans are available. This uses an external, account-based service (see the disclosure below) and is optional beyond the free tier.
+2. **Bring your own API key (advanced)** — Prefer to run on your own OpenAI or Anthropic account? Add your own API key in the Advanced settings and generation runs at-cost, directly with your provider, with no per-image fees or vendor lock-in. You choose the provider and model.
 
 **Key Features:**
+- **Works out of the box**: no API key needed — 50 free images per month on every site
 - **Accessibility & compliance**: WCAG-aligned output to support ADA, EAA, and Section 508 requirements
 - **SEO keyphrase integration**: automatically weaves in focus keyphrases from Yoast SEO, Rank Math, and SEOPress (without keyword stuffing)
 - **Page-context aware**: uses the page/post the image belongs to for more relevant descriptions
-- **Multi-Provider Support**: choose between OpenAI and Anthropic — your own API key, no lock-in
-- **Cost-Effective by default**: ships with a fast, low-cost vision model for each provider — and you can switch to any model your provider offers
+- **Bring your own key (optional)**: advanced users can plug in their own OpenAI or Anthropic key — any vision-capable model, no lock-in
 - **Bulk Processing**: generate alt text for your whole library at once, or automatically on upload
 - **Custom Prompts**: tailor the AI prompt to your brand and needs
 - **Multi-Language Support**: generate alt text in many languages
 - **Testing Feature**: preview prompts before applying them to images
-- **WP-CLI Support**: configure providers and bulk-generate from the command line
+- **WP-CLI Support**: bulk-generate from the command line
 - **Developer-friendly**: extensible via action/filter hooks for custom integrations and add-ons
 
 **WP-CLI:**
 The plugin registers a `wp ai-alt-text` command suite, making it easy to automate alt text generation across one or many sites.
 
-    # Configure a provider and API key
-    wp ai-alt-text activate --provider=openai --key=sk-xxxxxxxx
-
-    # Bulk-generate alt text for all images missing it
+    # Bulk-generate alt text for all images missing it (uses managed credits by default)
     wp ai-alt-text generate
+
+    # Optional: configure your own provider and API key (advanced)
+    wp ai-alt-text activate --provider=openai --key=sk-xxxxxxxx
 
     # Regenerate alt text for specific attachments
     wp ai-alt-text generate --ids=12,34,56 --force
@@ -48,19 +53,19 @@ The plugin registers a `wp ai-alt-text` command suite, making it easy to automat
     # Show current configuration and coverage
     wp ai-alt-text status
 
-A typical install/activate/generate workflow:
+A typical install-and-generate workflow needs no key at all:
 
     wp plugin install ai-alt-text-generator --activate
-    wp ai-alt-text activate --provider=anthropic --key=sk-ant-xxxx
     wp ai-alt-text generate --yes
 
 **New in Latest Version:**
-- Optional managed-credit mode — generate alt text with no API key needed (free tier included)
+- Managed credits are now the default: generate alt text with no API key and no signup — 50 free images per month on every site
+- Bring-your-own OpenAI/Anthropic key moved to an "Advanced" option for users who prefer to run on their own account
 - WCAG-aligned output, SEO focus-keyphrase integration (Yoast / Rank Math / SEOPress), and page-context awareness
 - Optionally set the image Title, Caption, and Description from the generated alt text
 - Future-proof model handling (no hard-coded model versions; configurable defaults)
 
-Important: This plugin uses external AI services (your own OpenAI/Anthropic key, or the optional managed-credit service) to generate alt text.
+Important: This plugin uses an external AI service to generate alt text — either the optional managed-credit service (account-based, free tier plus paid plans) or your own OpenAI/Anthropic key. See the External Service Usage Disclosure below.
 
 **AI Alt Text Generator Pro (optional upgrade)**
 
@@ -70,56 +75,53 @@ Need automation at scale? The optional Pro add-on builds on this free plugin wit
 - A coverage analytics dashboard to track your progress toward 100%
 - Automatic updates and priority support
 
-Learn more at https://store.lessbutmore.ai — the free plugin remains fully functional on its own.
+Learn more at https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=pro — the free plugin remains fully functional on its own.
 
 == Installation ==
 
 1. Upload the plugin files to the /wp-content/plugins/ai-alt-text-generator directory, or install the plugin through the WordPress plugins screen directly.
 2. Activate the plugin through the 'Plugins' screen in WordPress.
-3. Obtain an API key from your preferred provider:
+3. That's it — the plugin connects to the managed credits service automatically and you can start generating right away, with **no API key and no signup**. Every site gets 50 free images per month.
+4. Navigate to the 'Alt Text Generator' admin page, then use "Generate" on a single image or bulk-generate across your library.
+5. (Optional, advanced) Prefer your own AI account? Open the Advanced settings and add an API key:
    - **OpenAI**: Visit https://openai.com and sign up to get your API key
    - **Anthropic**: Visit https://console.anthropic.com and sign up to get your API key
-4. Navigate to the 'Alt Text Generator' admin page in your WordPress dashboard.
-5. Select your preferred AI provider and configure it with your API key.
 6. Customize your prompt and language settings as needed.
 
 == Frequently Asked Questions ==
 
-= Does this plugin require an API key? =
-You have two options: use your own OpenAI or Anthropic API key (free — you pay the provider directly at cost), or use the optional managed-credit service that needs no API key at all (with a free tier). Either way works.
+= Do I need an API key to use this plugin? =
+No. The plugin works out of the box with the built-in managed credits service — no API key and no signup. Every site gets 50 free images per month. If you'd rather run on your own AI account, you can optionally add your own OpenAI or Anthropic API key in the Advanced settings.
 
-= Can I use it without an API key? =
-Yes. Enable "managed credits" in the plugin settings to generate alt text without any API key — the free tier includes 50 images per month, and you can upgrade for more. Learn more at https://store.lessbutmore.ai
+= What are managed credits and are they free? =
+Managed credits let the plugin generate alt text through the AI Alt Text Generator managed service without you configuring anything. Every site gets **50 free images per month**. If you need more, affordable paid credit plans are available. This uses an external, account-based service and is optional beyond the free tier. Learn more at https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=managed_credits
+
+= Can I use my own OpenAI or Anthropic API key instead? =
+Yes. In the Advanced settings you can add your own OpenAI or Anthropic API key and generate directly on your own account — at cost, with no per-image fees and no vendor lock-in. You can use any vision-capable model your provider offers; the plugin ships with a sensible, low-cost default and lets you change the model anytime.
+
+= Is this good for accessibility and legal compliance? =
+Yes — that's the point. It produces WCAG-aligned alt text to help you meet WCAG 2.2, ADA, Section 508, and European Accessibility Act (EAA) requirements. It's a practical fit for nonprofits, churches, schools, and small businesses that need accessible websites without a developer on staff.
 
 = Is there a Pro version? =
-Yes. AI Alt Text Generator Pro is an optional add-on that adds WooCommerce product context, scheduled background scans that describe images automatically, a coverage analytics dashboard, automatic updates, and priority support. The free plugin is fully functional on its own. Learn more at https://store.lessbutmore.ai
+Yes. AI Alt Text Generator Pro is an optional add-on that adds WooCommerce product context, scheduled background scans that describe images automatically, a coverage analytics dashboard, automatic updates, and priority support. The free plugin is fully functional on its own. Learn more at https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=pro
 
-= What AI providers are supported? =
-You bring your own API key for **OpenAI** or **Anthropic**, and you can use any vision-capable model your provider offers. The plugin ships with a sensible, low-cost default for each provider and lets you change the model anytime in settings — so you're never locked to a specific model if providers add or retire one.
-
-= Can I switch between different AI providers? =
-Yes, you can easily switch between OpenAI and Anthropic providers in the plugin settings. Each provider has its own API key configuration.
-
-= How does this plugin use the AI APIs? =
-The plugin sends images to your selected AI provider's API, which then returns the generated alt text. This process requires an active internet connection and the transmission of data to the AI provider's servers.
+= How does this plugin use the AI service? =
+The plugin sends images to the AI service — the managed credits service by default, or your selected provider's API if you've added your own key — which returns the generated alt text. This process requires an active internet connection and the transmission of image data to the service's servers.
 
 = Can I generate alt text for multiple images at once? =
-Yes, the AI Alt Text Generator supports bulk processing of images for efficient workflow.
+Yes, the AI Alt Text Generator supports bulk processing of images for efficient workflow, and can also generate automatically on upload.
 
 = Can I use a custom prompt? =
 Yes, you can customize the prompt used to generate alt text in the plugin settings. You can also test your prompts before applying them to images.
 
-= Which provider is more cost-effective? =
-Both providers offer fast, low-cost vision models, and the plugin defaults to a cost-efficient model for each. You can switch models anytime in settings to balance cost and quality.
-
 = Can I use the plugin from the command line (WP-CLI)? =
-Yes. The plugin registers a `wp ai-alt-text` command suite with three subcommands:
-- `wp ai-alt-text activate --provider=<openai|anthropic> --key=<api-key>` configures the provider and API key. Add `--skip-validation` to save without a live API check. (Each provider uses a fixed default model.)
-- `wp ai-alt-text generate` bulk-generates alt text. Useful flags: `--limit=<n>`, `--provider=<provider>`, `--force` (regenerate existing), `--ids=12,34` (specific attachments), `--dry-run` (preview only), and `--yes` (skip confirmation).
-- `wp ai-alt-text status` shows the active provider, which keys are configured, the prompt/language, and alt text coverage counts.
+Yes. The plugin registers a `wp ai-alt-text` command suite:
+- `wp ai-alt-text generate` bulk-generates alt text (using managed credits by default). Useful flags: `--limit=<n>`, `--provider=<provider>`, `--force` (regenerate existing), `--ids=12,34` (specific attachments), `--dry-run` (preview only), and `--yes` (skip confirmation).
+- `wp ai-alt-text activate --provider=<openai|anthropic> --key=<api-key>` optionally configures your own provider and API key. Add `--skip-validation` to save without a live API check.
+- `wp ai-alt-text status` shows the active mode/provider, which keys are configured, the prompt/language, and alt text coverage counts.
 
 = Is my data secure? =
-The plugin only sends image data and prompts to the selected AI provider for processing. Please review the privacy policies of OpenAI and/or Anthropic for details on how they handle data.
+The plugin only sends image data and prompts to the AI service for processing to produce alt text. Images and generated alt text are not stored on our servers beyond what is needed to return your result. If you use your own API key, please review the privacy policies of OpenAI and/or Anthropic. For the managed service, see the External Service Usage Disclosure below.
 
 == Screenshots ==
 
@@ -129,6 +131,16 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
 
+= 2.5.4 =
+- **Fixed: managed credits now actually generate alt text.** A result-format mismatch caused managed-mode generation to fail on every path (bulk, single, upload, WP-CLI). This was the root cause behind "nothing happens" reports in managed mode.
+- **Works out of the box**: new installs connect to managed credits automatically and get 50 free images per month — no API key, no signup, no email required.
+- Bulk Generate now works in managed-credit mode (the Start button no longer requires an API key).
+- Clear, actionable errors when credits run out, an account needs attention, or the service is unreachable — instead of silent failures.
+- New: alt-text coverage dashboard widget showing how many images still need alt text.
+- Low-credit warning in settings so you know before you run out.
+- Already have a paid plan? Paste your API token from your dashboard to connect this site.
+- Accessibility framing updated for WCAG 1.1.1 and the European Accessibility Act.
+
 = 2.5.3 =
 - Settings: managed credits (no API key needed) is now the recommended option, shown first; using your own API key is presented as an "Advanced" option below
 
@@ -136,7 +148,7 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 - Fix: the "Upgrade to Pro" panel now renders inside the settings screen so it's always fully visible (the previous admin-notice version could be covered by the settings header)
 
 = 2.5.1 =
-- New: optional **managed credits** mode — generate alt text with no API key needed (free 50 images/month via the AI Alt Text Generator service). Bring-your-own-key remains fully supported and free.
+- New: optional **managed credits** mode — generate alt text with no API key needed (free monthly images via the AI Alt Text Generator service). Bring-your-own-key remains fully supported and free.
 - Future-proofed model handling: no hard-coded model versions; the default model is filterable (aatg_default_model), and the deprecated GPT-4 Vision Preview was removed.
 - Connect and manage a managed-credits account from the General settings tab.
 
@@ -238,18 +250,25 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Upgrade Notice ==
 
+= 2.5.3 =
+Managed credits are now the default — generate WCAG-friendly alt text with no API key and no signup, 50 free images/month on every site. Bring-your-own key is still available as an advanced option.
+
 = 2.2.0 =
 Adds WP-CLI support: configure providers and bulk-generate alt text from the command line (wp ai-alt-text activate|generate|status).
 
 == External Service Usage Disclosure ==
 
-This plugin uses external AI services to generate alt text. Data (images and their metadata) is sent to your selected AI provider for processing.
+This plugin relies on external AI services to generate alt text. In all cases, data (images and their metadata) is sent to an external service for processing. The plugin does not store your images or generated alt text on our servers beyond what is needed to return your result.
 
-**Supported Services:**
+**Managed credits service (default)**
+By default the plugin uses the AI Alt Text Generator managed credits service so it works with no API key. On activation, the plugin automatically connects your site to obtain a free account (50 images per month) — this registers your site with the external service and requires an account. Images to be described are sent to this service for processing. Use beyond the free monthly tier requires a paid credit plan. The service is operated via https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=disclosure — please review the site for its terms and privacy policy. You can disable managed credits in the plugin settings and use your own API key instead.
+
+**Bring-your-own-key providers (optional, advanced)**
+If you add your own API key, images are sent to the provider you select:
 - **OpenAI**: For more information, please review the [OpenAI Terms of Use](https://openai.com/terms/) and [Privacy Policy](https://openai.com/privacy/)
 - **Anthropic**: For more information, please review the [Anthropic Terms of Service](https://www.anthropic.com/terms) and [Privacy Policy](https://www.anthropic.com/privacy)
 
-You can choose which service to use and are only required to agree to the terms of the service you select. The plugin does not store your images or generated alt text on our servers.
+You choose which path to use and are only required to agree to the terms of the service you actually use.
 
 == Support ==
 

@@ -65,6 +65,44 @@ if ( ! function_exists( 'aatg_text_generator_get_options' ) ) :
 endif;
 
 /**
+ * Alt-text coverage stats for the media library (cached).
+ *
+ * Direct COUNT queries so large libraries don't load every attachment. Cached
+ * briefly since it powers the dashboard widget on frequent admin loads.
+ *
+ * @since 2.5.4
+ * @return array{ total:int, with_alt:int, missing:int, percent:int }
+ */
+if ( ! function_exists( 'aatg_get_coverage_stats' ) ) :
+	function aatg_get_coverage_stats() {
+		$cached = get_transient( 'aatg_coverage_stats' );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+		global $wpdb;
+		$total = (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$wpdb->posts}
+			 WHERE post_type = 'attachment' AND post_status = 'inherit' AND post_mime_type LIKE 'image/%'"
+		);
+		$missing = (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$wpdb->posts} p
+			 LEFT JOIN {$wpdb->postmeta} m ON ( p.ID = m.post_id AND m.meta_key = '_wp_attachment_image_alt' )
+			 WHERE p.post_type = 'attachment' AND p.post_status = 'inherit' AND p.post_mime_type LIKE 'image/%'
+			   AND ( m.meta_id IS NULL OR m.meta_value = '' )"
+		);
+		$with  = max( 0, $total - $missing );
+		$stats = array(
+			'total'    => $total,
+			'with_alt' => $with,
+			'missing'  => $missing,
+			'percent'  => $total > 0 ? (int) round( ( $with / $total ) * 100 ) : 100,
+		);
+		set_transient( 'aatg_coverage_stats', $stats, 15 * MINUTE_IN_SECONDS );
+		return $stats;
+	}
+endif;
+
+/**
  * Persist a generated alt text value for an attachment, applying add-on hooks.
  *
  * Centralises the "filter then save then notify" sequence so every generation
@@ -377,8 +415,119 @@ if ( ! function_exists( 'aatg_managed_status' ) ) :
 endif;
 
 /**
+ * Map a managed-store error code to a human-readable, translatable message.
+ *
+ * The store's /api/generate returns short reason codes (not_found, pending,
+ * disabled, no_credits) or a generation error string; surface something the
+ * site owner can act on instead of a raw code.
+ *
+ * @since 2.5.4
+ * @param string $code Raw error code/message from the store.
+ * @return string Friendly message.
+ */
+if ( ! function_exists( 'aatg_managed_error_message' ) ) :
+	function aatg_managed_error_message( $code ) {
+		switch ( (string) $code ) {
+			case 'no_credits':
+				return __( "You're out of managed credits. Upgrade your plan to keep generating alt text.", 'ai-alt-text-generator' );
+			case 'pending':
+				return __( 'Your managed account is not activated yet. Check your email for the activation link, or reconnect in settings.', 'ai-alt-text-generator' );
+			case 'disabled':
+				return __( 'Your managed account is disabled. Please contact support.', 'ai-alt-text-generator' );
+			case 'not_found':
+				return __( 'Your managed connection is invalid. Reconnect the managed credits service in settings.', 'ai-alt-text-generator' );
+			case '':
+			case 'generation_failed':
+				return __( 'The managed credits service could not generate alt text for this image. Please try again.', 'ai-alt-text-generator' );
+			default:
+				return sprintf(
+					/* translators: %s: raw error message from the managed service. */
+					__( 'Managed credits service error: %s', 'ai-alt-text-generator' ),
+					$code
+				);
+		}
+	}
+endif;
+
+/**
+ * Track successful generations: powers the "leave a review" prompt and keeps the
+ * cached coverage stats fresh. Hooked on the plugin's own post-save action.
+ *
+ * @since 2.5.4
+ */
+if ( ! function_exists( 'aatg_track_generation' ) ) :
+	function aatg_track_generation( $attachment_id = 0, $alt_text = '', $context = array() ) {
+		delete_transient( 'aatg_coverage_stats' );
+		update_option( 'aatg_generated_count', (int) get_option( 'aatg_generated_count', 0 ) + 1, false );
+	}
+endif;
+add_action( 'aatg_after_generate', 'aatg_track_generation', 10, 3 );
+
+/**
+ * Auto-connect a site to managed credits so alt text works out of the box.
+ *
+ * Managed credits are the default: on a fresh install (or an existing install
+ * with no provider key), grab a free trial account (25 credits, no email) on the
+ * next admin load. Skips sites that use their own API key or explicitly
+ * disconnected. Best-effort with backoff so a store outage never slows wp-admin.
+ *
+ * @since 2.5.4
+ */
+if ( ! function_exists( 'aatg_maybe_autoconnect_managed' ) ) :
+	function aatg_maybe_autoconnect_managed() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$o = aatg_text_generator_get_options();
+		// Already connected, using a BYO key, or the user opted out — respect it.
+		if ( ! empty( $o['managed_token'] ) ) {
+			return;
+		}
+		if ( ! empty( $o['openai_key'] ) || ! empty( $o['anthropic_key'] ) ) {
+			return;
+		}
+		if ( ! empty( $o['managed_optout'] ) ) {
+			return;
+		}
+		// A paid plan exists for this site; the user must paste their token.
+		if ( ! empty( $o['managed_awaiting_token'] ) ) {
+			return;
+		}
+		// Throttle attempts if the store is unreachable.
+		if ( get_transient( 'aatg_autoconnect_backoff' ) ) {
+			return;
+		}
+		// Optimistic lock: set the backoff BEFORE the network call so a hung store
+		// can't make every admin page load block on a fresh 30s request.
+		set_transient( 'aatg_autoconnect_backoff', 1, 15 * MINUTE_IN_SECONDS );
+		$res = aatg_managed_register( '', home_url() );
+		if ( is_wp_error( $res ) ) {
+			// A paid plan already exists for this site — stop auto-registering and
+			// let the settings screen prompt the user to paste their token.
+			if ( 'paid_account_exists' === $res->get_error_message() ) {
+				$o['managed_awaiting_token'] = true;
+				update_option( 'aatg_text_generator_options', $o );
+				set_transient( 'aatg_autoconnect_backoff', 1, WEEK_IN_SECONDS );
+			}
+			return;
+		}
+		$o['managed_token'] = $res['token'];
+		$o['managed_ref']   = isset( $res['account_ref'] ) ? $res['account_ref'] : '';
+		$o['managed_mode']  = true;
+		update_option( 'aatg_text_generator_options', $o );
+		delete_transient( 'aatg_autoconnect_backoff' );
+	}
+endif;
+add_action( 'admin_init', 'aatg_maybe_autoconnect_managed' );
+
+/**
  * Short-circuit generation through the managed store when managed mode is on.
  * Hooked on the plugin's own `aatg_pre_generate_alt_text` filter.
+ *
+ * Returns the standard result array — array( 'success', 'alt_text', 'message' ) —
+ * that Provider_Factory::generate_alt_text() and every caller expect. Returning a
+ * bare string here silently breaks every consumer (they index $result['success']),
+ * which is why managed generation never completed before 2.5.4.
  *
  * @since 2.5.1
  */
@@ -390,12 +539,32 @@ if ( ! function_exists( 'aatg_managed_pre_generate' ) ) :
 		$o    = aatg_text_generator_get_options();
 		$mime = ! empty( $context['attachment_id'] ) ? get_post_mime_type( (int) $context['attachment_id'] ) : '';
 		$alt  = aatg_managed_generate( $o['managed_token'], $image_base64, $prompt, $language, $mime );
-		if ( is_wp_error( $alt ) || '' === (string) $alt ) {
-			// Graceful: return an empty result rather than falling through to the
-			// (keyless) provider path, which would error.
-			return '';
+
+		if ( is_wp_error( $alt ) ) {
+			// Non-null array short-circuits the provider path with a proper failure
+			// result, so callers surface a real message instead of falling through
+			// to the keyless provider (which would also fail).
+			return array(
+				'success'  => false,
+				'alt_text' => '',
+				'message'  => aatg_managed_error_message( $alt->get_error_message() ),
+			);
 		}
-		return $alt;
+
+		$alt = (string) $alt;
+		if ( '' === $alt ) {
+			return array(
+				'success'  => false,
+				'alt_text' => '',
+				'message'  => aatg_managed_error_message( '' ),
+			);
+		}
+
+		return array(
+			'success'  => true,
+			'alt_text' => $alt,
+			'message'  => '',
+		);
 	}
 endif;
 add_filter( 'aatg_pre_generate_alt_text', 'aatg_managed_pre_generate', 10, 5 );
