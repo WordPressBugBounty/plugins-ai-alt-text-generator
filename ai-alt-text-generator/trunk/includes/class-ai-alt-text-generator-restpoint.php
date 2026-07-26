@@ -111,30 +111,75 @@ class AATG_Text_Generator_Restpoint {
 
     /**
      * Connect (or re-connect) a managed-credit account for this site.
-     * Registers with the store, stores the issued token, and enables managed mode.
+     *
+     * Two ways in:
+     *  - Paste an existing API token (from the store dashboard — how paid buyers
+     *    connect). We validate it against the store and store it as-is.
+     *  - Otherwise auto-register a fresh free account (instant trial credits, no
+     *    email required). Email is optional and only used to link a later purchase.
      */
     public function managed_connect(WP_REST_Request $request) {
-        $email = sanitize_email((string) $request->get_param('email'));
-        if (!is_email($email)) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'A valid email is required'), 400);
+        $token = sanitize_text_field((string) $request->get_param('token'));
+
+        // Path 1: connect with a pasted token.
+        if ('' !== $token) {
+            $res = aatg_managed_status($token);
+            if (is_wp_error($res)) {
+                // Business outcome (not a transport error): return 200 so the admin
+                // JS reads the structured fields instead of a thrown apiFetch error.
+                return new WP_REST_Response(array(
+                    'ok'      => false,
+                    'error'   => 'invalid_token',
+                    'message' => __('That token was not recognized. Copy it again from your dashboard.', 'ai-alt-text-generator'),
+                ), 200);
+            }
+            $options = aatg_text_generator_get_options();
+            $options['managed_token']  = $token;
+            $options['managed_mode']   = true;
+            $options['managed_optout'] = false;
+            update_option('aatg_text_generator_options', $options);
+            return new WP_REST_Response(array(
+                'ok'                => true,
+                'status'            => $res['status'] ?? 'active',
+                'plan'              => $res['plan'] ?? 'free',
+                'credits_remaining' => $res['credits_remaining'] ?? 0,
+                'monthly_credits'   => $res['monthly_credits'] ?? 0,
+            ), 200);
         }
-        $res = aatg_managed_register($email, home_url());
+
+        // Path 2: auto-register a free account (email optional).
+        $email = sanitize_email((string) $request->get_param('email'));
+        $res   = aatg_managed_register($email, home_url());
         if (is_wp_error($res)) {
+            // A paid plan already exists for this site: send the user to the
+            // dashboard to copy their token instead of minting a new one.
+            if ('paid_account_exists' === $res->get_error_message()) {
+                // Business outcome: 200 so the admin JS can show the dashboard link.
+                return new WP_REST_Response(array(
+                    'ok'            => false,
+                    'error'         => 'paid_account_exists',
+                    'message'       => __('A paid plan already exists for this site. Sign in to your dashboard, copy your API token, and paste it here.', 'ai-alt-text-generator'),
+                    'dashboard_url' => aatg_store_url() . '/login',
+                ), 200);
+            }
             return new WP_REST_Response(array('ok' => false, 'error' => $res->get_error_message()), 502);
         }
         $options = aatg_text_generator_get_options();
-        $options['managed_email'] = $email;
-        $options['managed_token'] = $res['token'];
-        $options['managed_mode']  = true;
+        if ('' !== $email) {
+            $options['managed_email'] = $email;
+        }
+        $options['managed_token']  = $res['token'];
+        $options['managed_ref']    = isset($res['account_ref']) ? $res['account_ref'] : '';
+        $options['managed_mode']   = true;
+        $options['managed_optout'] = false;
         update_option('aatg_text_generator_options', $options);
 
         return new WP_REST_Response(array(
             'ok'                => true,
-            'status'            => $res['status'] ?? 'pending',
+            'status'            => $res['status'] ?? 'active',
             'plan'              => $res['plan'] ?? 'free',
             'credits_remaining' => $res['credits_remaining'] ?? 0,
             'monthly_credits'   => $res['monthly_credits'] ?? 0,
-            'emailed'           => !empty($res['emailed']),
             'email'             => $email,
         ), 200);
     }
@@ -159,6 +204,8 @@ class AATG_Text_Generator_Restpoint {
         $options['managed_mode']  = false;
         $options['managed_token'] = '';
         $options['managed_email'] = '';
+        // Remember the choice so auto-connect doesn't immediately reconnect.
+        $options['managed_optout'] = true;
         update_option('aatg_text_generator_options', $options);
         return new WP_REST_Response(array('ok' => true), 200);
     }
@@ -198,6 +245,7 @@ class AATG_Text_Generator_Restpoint {
             update_option('aatg_is_processing', true);
             update_option('aatg_processing_total', $total_images);
             update_option('aatg_processing_current', 0);
+            update_option('aatg_processing_skipped', 0);
 
             return new WP_REST_Response(array(
                 'status' => 'success',
@@ -414,6 +462,7 @@ class AATG_Text_Generator_Restpoint {
         if (!get_option('aatg_is_processing', false)) {
             update_option('aatg_processing_total', 0);
             update_option('aatg_processing_current', 0);
+            update_option('aatg_processing_skipped', 0);
             return;
         }
 
@@ -425,24 +474,34 @@ class AATG_Text_Generator_Restpoint {
             'offset'         => get_option('aatg_processing_current', 0)
         );
 
-        // If not rewriting all, fetch images without alt text
-        if (!$this->rewrite_all) {
+        // A Media Library bulk action records the exact selection. Page through
+        // that list rather than the whole library, so we only ever touch the
+        // images the user actually picked. Mirrors process_next_image().
+        $bulk_ids = get_transient('aatg_bulk_generation_ids');
+
+        if ($bulk_ids && is_array($bulk_ids)) {
+            $args['post__in'] = $bulk_ids;
+            $args['orderby']  = 'post__in';
+        } elseif (!$this->rewrite_all) {
+            // If not rewriting all, fetch images without alt text
             $ids = $this->get_images_without_alt_text_ids();
             if (empty($ids)) {
-                update_option('aatg_is_processing', false);
-                update_option('aatg_processing_total', 0);
-                update_option('aatg_processing_current', 0);
+                $this->finish_processing();
                 return;
             }
             $args['post__in'] = $ids;
+
+            // This candidate list SHRINKS as images gain alt text, so paging it
+            // with a progress-based offset walks off the front of the queue and
+            // silently skips images. Step past only the ones we couldn't
+            // process — everything successful drops out of the list by itself.
+            $args['offset'] = get_option('aatg_processing_skipped', 0);
         }
-    
+
         $media_items = get_posts($args);
-    
+
         if (empty($media_items)) {
-            update_option('aatg_is_processing', false);
-            update_option('aatg_processing_total', 0);
-            update_option('aatg_processing_current', 0);
+            $this->finish_processing();
             return;
         }
 
@@ -455,37 +514,65 @@ class AATG_Text_Generator_Restpoint {
                 return;
             }
 
+            // `current` is both the progress counter and (for fixed-list runs)
+            // the query offset, so it advances for every image taken off the
+            // queue — including failures. Advancing only on success re-fetched
+            // the same failing image on every batch and the run never moved on.
+            $current++;
+            $saved = false;
+
             $image_url = $admin_instance->get_image_url_by_size($item->ID, 'thumbnail');
-            
-            if (!$image_url) {
-                continue;
+
+            if ($image_url) {
+                try {
+                    $alt_text = $admin_instance->generate_alt_text_with_ai(
+                        $image_url,
+                        array('attachment_id' => $item->ID, 'source' => 'bulk')
+                    );
+
+                    if ($alt_text) {
+                        // Route through the shared saver so add-on hooks and the
+                        // Title/Caption/Description mirroring apply here too.
+                        $admin_instance->save_generated_alt_text(
+                            $item->ID,
+                            $alt_text,
+                            array('source' => 'bulk')
+                        );
+                        $saved = true;
+                    }
+                } catch (Exception $e) {
+                    // Leave $saved false; counted as skipped below.
+                }
             }
 
-            try {
-                $alt_text = $admin_instance->generate_alt_text_with_ai($image_url);
-        
-                if ($alt_text) {
-                    update_post_meta($item->ID, '_wp_attachment_image_alt', $alt_text);
-                    $current++;
-                    update_option('aatg_processing_current', $current);
+            // An image we couldn't process stays in the "missing alt text" query,
+            // so that run needs to step over it explicitly or it would be
+            // re-fetched forever.
+            if (!$saved) {
+                update_option('aatg_processing_skipped', get_option('aatg_processing_skipped', 0) + 1);
+            }
 
-                    // Check if we've processed all images
-                    if ($current >= $total) {
-                        update_option('aatg_is_processing', false);
-                        update_option('aatg_processing_total', 0);
-                        update_option('aatg_processing_current', 0);
-                        delete_transient('aatg_bulk_generation_ids');
-                        return;
-                    }
-                }
-            } catch (Exception $e) {
-                continue;
+            update_option('aatg_processing_current', $current);
+
+            // Check if we've processed all images
+            if ($total > 0 && $current >= $total) {
+                $this->finish_processing();
+                return;
             }
         }
-    
+
         if (get_option('aatg_is_processing', false)) {
             wp_schedule_single_event(time() + 5, 'ai_process_media_batch', array($batch_size));
         }
+	}
+
+	/** Clear all bulk-run state. Terminal step for every finish path. */
+	private function finish_processing() {
+        update_option('aatg_is_processing', false);
+        update_option('aatg_processing_total', 0);
+        update_option('aatg_processing_current', 0);
+        update_option('aatg_processing_skipped', 0);
+        delete_transient('aatg_bulk_generation_ids');
 	}
 
 	private function get_images_without_alt_text_ids() {

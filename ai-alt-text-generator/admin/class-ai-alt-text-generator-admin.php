@@ -394,6 +394,42 @@ class AATG_Text_Generator_Admin {
         <?php
     }
 
+    /**
+     * Render the outcome of a Media Library bulk action.
+     *
+     * handle_bulk_action() has always set these query args, but nothing ever
+     * displayed them, so the bulk action gave no feedback at all.
+     *
+     * @since 2.5.5
+     */
+    public function show_bulk_action_result_notice() {
+        // Read-only rendering of a redirect arg set by our own bulk handler.
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended
+        $error   = isset($_GET['aatg_error']) ? sanitize_key(wp_unslash($_GET['aatg_error'])) : '';
+        $message = isset($_GET['aatg_message']) ? sanitize_key(wp_unslash($_GET['aatg_message'])) : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+        if ('no_images_selected' === $error) {
+            $text = __('No images were selected. Pick one or more images, then choose "Generate Alt Text".', 'ai-alt-text-generator');
+        } elseif ('already_processing' === $error) {
+            $text = __('A bulk generation run is already in progress. Wait for it to finish before starting another.', 'ai-alt-text-generator');
+        } elseif ('bulk_started' === $message) {
+            // The progress notice renders the bar; this just confirms the start.
+            printf(
+                '<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+                esc_html__('Alt text generation started for the selected images.', 'ai-alt-text-generator')
+            );
+            return;
+        } else {
+            return;
+        }
+
+        printf(
+            '<div class="notice notice-warning is-dismissible"><p>%s</p></div>',
+            esc_html($text)
+        );
+    }
+
     public function show_bulk_processing_notice() {
         if (get_option('aatg_is_processing')) {
             $total = get_option('aatg_processing_total', 0);
@@ -515,26 +551,43 @@ class AATG_Text_Generator_Admin {
 
     public function handle_bulk_action($redirect_to, $doaction, $post_ids) {
         if ($doaction === 'generate_alt_text') {
-            
+
             if (empty($post_ids) || !is_array($post_ids)) {
                 return add_query_arg('aatg_error', 'no_images_selected', $redirect_to);
             }
 
-            // Immediately process the first image to provide instant feedback
-            if (!empty($post_ids)) {
-                $first_image_id = array_shift($post_ids);
-                $this->generate_alt_text_for_image_function($first_image_id);
-                // Update the count to reflect one image processed
-                update_option('aatg_processing_current', 1);
+            // Don't stomp the counters of a run already started from the settings
+            // screen — the two share aatg_processing_* state.
+            if (get_option('aatg_is_processing', false)) {
+                return add_query_arg('aatg_error', 'already_processing', $redirect_to);
             }
-            
-            // If there are more images, store them in the transient for the background processor
-            if (!empty($post_ids)) {
+
+            // Keep the whole selection in the transient. The batch processor pages
+            // through it with `offset`, so the list has to stay stable for the
+            // duration of the run — shifting items off it would skip images.
+            $post_ids = array_values(array_map('intval', $post_ids));
+            $total    = count($post_ids);
+
+            // Process the first image inline so the user gets instant feedback.
+            $this->generate_alt_text_for_image_function($post_ids[0]);
+
+            if ($total > 1) {
                 set_transient('aatg_bulk_generation_ids', $post_ids, HOUR_IN_SECONDS);
+                // process_media_batch() returns immediately unless this flag is
+                // set, which is why the background half of a Media Library bulk
+                // action never ran before 2.5.5.
+                update_option('aatg_is_processing', true);
+                update_option('aatg_processing_total', $total);
+                update_option('aatg_processing_current', 1);
+                update_option('aatg_processing_skipped', 0);
                 wp_schedule_single_event(time() + 5, 'ai_process_media_batch', array(10));
             } else {
-                // If only one image was processed, we're done
+                // Single image: already done inline, nothing to schedule.
+                delete_transient('aatg_bulk_generation_ids');
                 update_option('aatg_is_processing', false);
+                update_option('aatg_processing_total', 0);
+                update_option('aatg_processing_current', 0);
+                update_option('aatg_processing_skipped', 0);
             }
 
             // Add a query arg to notify the user

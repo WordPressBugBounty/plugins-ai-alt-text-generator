@@ -232,6 +232,204 @@ class AATG_Text_Generator_Admin {
         wp_localize_script( 'ai-alt-text-generator-media', 'aiAltTextGenerator', array( 'ajax_url' => admin_url( 'admin-ajax.php' ), 'nonce' => $nonce ) );
     }
 
+    /**
+     * Dismissible upsell shown on WooCommerce stores without Pro. Pro writes
+     * product-aware alt text (name + attributes) — a strong fit for shops, which
+     * are a core part of our ICP.
+     */
+    public function show_woocommerce_upsell_notice() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return;
+        }
+        if ( defined( 'AATG_PRO_VERSION' ) || ! class_exists( 'WooCommerce' ) ) {
+            return;
+        }
+        if ( get_user_meta( get_current_user_id(), 'aatg_wc_upsell_dismissed', true ) ) {
+            return;
+        }
+        // Only on commerce / plugin / dashboard screens to avoid nagging everywhere.
+        $screen   = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+        $relevant = $screen && (
+            false !== strpos( $screen->id, 'woocommerce' ) ||
+            false !== strpos( $screen->id, 'ai-alt-text' ) ||
+            'product' === $screen->post_type ||
+            'dashboard' === $screen->id ||
+            'plugins' === $screen->id
+        );
+        if ( ! $relevant ) {
+            return;
+        }
+        $dismiss_url = wp_nonce_url( add_query_arg( 'aatg_dismiss_wc_upsell', '1' ), 'aatg_dismiss_wc_upsell' );
+        $pro_url     = 'https://store.lessbutmore.ai/pricing?utm_source=plugin&utm_medium=wc_notice&utm_campaign=woocommerce';
+        ?>
+        <div class="notice notice-info">
+            <p>
+                <strong><?php esc_html_e( 'Selling on WooCommerce?', 'ai-alt-text-generator' ); ?></strong>
+                <?php esc_html_e( 'AI Alt Text Generator Pro writes commerce-aware alt text from each product’s name and attributes — better accessibility and richer image SEO for your shop, generated automatically on every new product.', 'ai-alt-text-generator' ); ?>
+            </p>
+            <p>
+                <a href="<?php echo esc_url( $pro_url ); ?>" target="_blank" rel="noreferrer noopener" class="button button-primary"><?php esc_html_e( 'See Pro for WooCommerce', 'ai-alt-text-generator' ); ?></a>
+                <a href="<?php echo esc_url( $dismiss_url ); ?>" class="button-link" style="margin-left:8px;"><?php esc_html_e( 'Don’t show again', 'ai-alt-text-generator' ); ?></a>
+            </p>
+        </div>
+        <?php
+    }
+
+    /** Persist dismissal of the WooCommerce upsell notice. */
+    public function maybe_dismiss_woocommerce_upsell() {
+        if ( isset( $_GET['aatg_dismiss_wc_upsell'] ) && current_user_can( 'manage_options' ) && check_admin_referer( 'aatg_dismiss_wc_upsell' ) ) {
+            update_user_meta( get_current_user_id(), 'aatg_wc_upsell_dismissed', 1 );
+            wp_safe_redirect( remove_query_arg( array( 'aatg_dismiss_wc_upsell', '_wpnonce' ) ) );
+            exit;
+        }
+    }
+
+    /**
+     * Ask for a WordPress.org review after the user has gotten real value (20+
+     * images generated). Review velocity is our biggest conversion lever, and
+     * this is the highest-intent moment to ask. One-time, dismissible.
+     */
+    public function show_review_request_notice() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return;
+        }
+        if ( get_user_meta( get_current_user_id(), 'aatg_review_dismissed', true ) ) {
+            return;
+        }
+        if ( (int) get_option( 'aatg_generated_count', 0 ) < 20 ) {
+            return;
+        }
+        $screen   = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+        $relevant = $screen && ( false !== strpos( $screen->id, 'ai-alt-text' ) || 'dashboard' === $screen->id || 'upload' === $screen->id );
+        if ( ! $relevant ) {
+            return;
+        }
+        $count       = number_format_i18n( (int) get_option( 'aatg_generated_count', 0 ) );
+        $review_url  = 'https://wordpress.org/support/plugin/ai-alt-text-generator/reviews/#new-post';
+        $dismiss_url = wp_nonce_url( add_query_arg( 'aatg_dismiss_review', '1' ), 'aatg_dismiss_review' );
+        ?>
+        <div class="notice notice-success">
+            <p>
+                <?php
+                printf(
+                    /* translators: %s: number of images processed. */
+                    esc_html__( 'Nice — AI Alt Text Generator has described %s images on your site. If it’s saving you time, a quick review really helps a small plugin like this.', 'ai-alt-text-generator' ),
+                    '<strong>' . esc_html( $count ) . '</strong>'
+                );
+                ?>
+            </p>
+            <p>
+                <a href="<?php echo esc_url( $review_url ); ?>" target="_blank" rel="noreferrer noopener" class="button button-primary"><?php esc_html_e( 'Leave a ★★★★★ review', 'ai-alt-text-generator' ); ?></a>
+                <a href="<?php echo esc_url( $dismiss_url ); ?>" class="button-link" style="margin-left:8px;"><?php esc_html_e( 'Maybe later', 'ai-alt-text-generator' ); ?></a>
+            </p>
+        </div>
+        <?php
+    }
+
+    /** Persist dismissal of the review request. */
+    public function maybe_dismiss_review() {
+        if ( isset( $_GET['aatg_dismiss_review'] ) && current_user_can( 'manage_options' ) && check_admin_referer( 'aatg_dismiss_review' ) ) {
+            update_user_meta( get_current_user_id(), 'aatg_review_dismissed', 1 );
+            wp_safe_redirect( remove_query_arg( array( 'aatg_dismiss_review', '_wpnonce' ) ) );
+            exit;
+        }
+    }
+
+    /** Register the alt-text coverage dashboard widget. */
+    public function register_dashboard_widget() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return;
+        }
+        wp_add_dashboard_widget(
+            'aatg_coverage_widget',
+            esc_html__( 'Alt Text Coverage', 'ai-alt-text-generator' ),
+            array( $this, 'render_coverage_widget' )
+        );
+    }
+
+    /**
+     * Coverage widget: a recurring, high-visibility surface. Shows the site's
+     * alt-text coverage with a CTA to fill gaps, and (for non-Pro) an upsell to
+     * keep it at 100% automatically.
+     */
+    public function render_coverage_widget() {
+        $s   = function_exists( 'aatg_get_coverage_stats' ) ? aatg_get_coverage_stats() : array( 'total' => 0, 'with_alt' => 0, 'missing' => 0, 'percent' => 100 );
+        $pct = (int) $s['percent'];
+        $bar = $pct >= 90 ? '#1e7a34' : ( $pct >= 50 ? '#bd8600' : '#b32d2e' );
+        $settings_url = admin_url( 'admin.php?page=' . $this->plugin_name );
+        ?>
+        <div style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+                <span><strong><?php echo esc_html( $pct ); ?>%</strong> <?php esc_html_e( 'of images have alt text', 'ai-alt-text-generator' ); ?></span>
+                <span style="color:#666;"><?php echo esc_html( number_format_i18n( $s['with_alt'] ) . ' / ' . number_format_i18n( $s['total'] ) ); ?></span>
+            </div>
+            <div style="width:100%;background:#e0e0e0;border-radius:4px;overflow:hidden;height:10px;">
+                <div style="width:<?php echo esc_attr( $pct ); ?>%;background:<?php echo esc_attr( $bar ); ?>;height:10px;"></div>
+            </div>
+        </div>
+        <?php if ( $s['missing'] > 0 ) : ?>
+            <p style="margin:10px 0;">
+                <?php
+                printf(
+                    /* translators: %s: number of images missing alt text. */
+                    esc_html__( '%s images still need alt text.', 'ai-alt-text-generator' ),
+                    '<strong>' . esc_html( number_format_i18n( $s['missing'] ) ) . '</strong>'
+                );
+                ?>
+                <br>
+                <span style="color:#666;font-size:12px;">
+                    <?php esc_html_e( 'Missing alt text is a WCAG 1.1.1 failure — and image accessibility is enforceable under the European Accessibility Act (in effect since June 2025).', 'ai-alt-text-generator' ); ?>
+                </span>
+            </p>
+            <a href="<?php echo esc_url( $settings_url ); ?>" class="button button-primary"><?php esc_html_e( 'Generate missing alt text', 'ai-alt-text-generator' ); ?></a>
+            <?php if ( ! defined( 'AATG_PRO_VERSION' ) ) : ?>
+                <a href="https://store.lessbutmore.ai/pricing?utm_source=plugin&utm_medium=dashboard_widget&utm_campaign=coverage" target="_blank" rel="noreferrer noopener" class="button" style="margin-left:6px;"><?php esc_html_e( 'Keep it at 100% with Pro', 'ai-alt-text-generator' ); ?></a>
+            <?php endif; ?>
+        <?php else : ?>
+            <p style="margin:10px 0;color:#1e7a34;">✓ <?php esc_html_e( 'Every image has alt text. Nice work!', 'ai-alt-text-generator' ); ?></p>
+            <?php if ( ! defined( 'AATG_PRO_VERSION' ) ) : ?>
+                <a href="https://store.lessbutmore.ai/pricing?utm_source=plugin&utm_medium=dashboard_widget&utm_campaign=coverage_100" target="_blank" rel="noreferrer noopener" class="button"><?php esc_html_e( 'Stay at 100% automatically with Pro', 'ai-alt-text-generator' ); ?></a>
+            <?php endif; ?>
+        <?php endif; ?>
+        <?php
+    }
+
+    /**
+     * Render the outcome of a Media Library bulk action.
+     *
+     * handle_bulk_action() has always set these query args, but nothing ever
+     * displayed them, so the bulk action gave no feedback at all.
+     *
+     * @since 2.5.5
+     */
+    public function show_bulk_action_result_notice() {
+        // Read-only rendering of a redirect arg set by our own bulk handler.
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended
+        $error   = isset($_GET['aatg_error']) ? sanitize_key(wp_unslash($_GET['aatg_error'])) : '';
+        $message = isset($_GET['aatg_message']) ? sanitize_key(wp_unslash($_GET['aatg_message'])) : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+        if ('no_images_selected' === $error) {
+            $text = __('No images were selected. Pick one or more images, then choose "Generate Alt Text".', 'ai-alt-text-generator');
+        } elseif ('already_processing' === $error) {
+            $text = __('A bulk generation run is already in progress. Wait for it to finish before starting another.', 'ai-alt-text-generator');
+        } elseif ('bulk_started' === $message) {
+            // The progress notice renders the bar; this just confirms the start.
+            printf(
+                '<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+                esc_html__('Alt text generation started for the selected images.', 'ai-alt-text-generator')
+            );
+            return;
+        } else {
+            return;
+        }
+
+        printf(
+            '<div class="notice notice-warning is-dismissible"><p>%s</p></div>',
+            esc_html($text)
+        );
+    }
+
     public function show_bulk_processing_notice() {
         if (get_option('aatg_is_processing')) {
             $total = get_option('aatg_processing_total', 0);
@@ -353,26 +551,43 @@ class AATG_Text_Generator_Admin {
 
     public function handle_bulk_action($redirect_to, $doaction, $post_ids) {
         if ($doaction === 'generate_alt_text') {
-            
+
             if (empty($post_ids) || !is_array($post_ids)) {
                 return add_query_arg('aatg_error', 'no_images_selected', $redirect_to);
             }
 
-            // Immediately process the first image to provide instant feedback
-            if (!empty($post_ids)) {
-                $first_image_id = array_shift($post_ids);
-                $this->generate_alt_text_for_image_function($first_image_id);
-                // Update the count to reflect one image processed
-                update_option('aatg_processing_current', 1);
+            // Don't stomp the counters of a run already started from the settings
+            // screen — the two share aatg_processing_* state.
+            if (get_option('aatg_is_processing', false)) {
+                return add_query_arg('aatg_error', 'already_processing', $redirect_to);
             }
-            
-            // If there are more images, store them in the transient for the background processor
-            if (!empty($post_ids)) {
+
+            // Keep the whole selection in the transient. The batch processor pages
+            // through it with `offset`, so the list has to stay stable for the
+            // duration of the run — shifting items off it would skip images.
+            $post_ids = array_values(array_map('intval', $post_ids));
+            $total    = count($post_ids);
+
+            // Process the first image inline so the user gets instant feedback.
+            $this->generate_alt_text_for_image_function($post_ids[0]);
+
+            if ($total > 1) {
                 set_transient('aatg_bulk_generation_ids', $post_ids, HOUR_IN_SECONDS);
+                // process_media_batch() returns immediately unless this flag is
+                // set, which is why the background half of a Media Library bulk
+                // action never ran before 2.5.5.
+                update_option('aatg_is_processing', true);
+                update_option('aatg_processing_total', $total);
+                update_option('aatg_processing_current', 1);
+                update_option('aatg_processing_skipped', 0);
                 wp_schedule_single_event(time() + 5, 'ai_process_media_batch', array(10));
             } else {
-                // If only one image was processed, we're done
+                // Single image: already done inline, nothing to schedule.
+                delete_transient('aatg_bulk_generation_ids');
                 update_option('aatg_is_processing', false);
+                update_option('aatg_processing_total', 0);
+                update_option('aatg_processing_current', 0);
+                update_option('aatg_processing_skipped', 0);
             }
 
             // Add a query arg to notify the user

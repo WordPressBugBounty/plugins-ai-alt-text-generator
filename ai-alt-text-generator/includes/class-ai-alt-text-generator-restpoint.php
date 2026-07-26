@@ -245,6 +245,7 @@ class AATG_Text_Generator_Restpoint {
             update_option('aatg_is_processing', true);
             update_option('aatg_processing_total', $total_images);
             update_option('aatg_processing_current', 0);
+            update_option('aatg_processing_skipped', 0);
 
             return new WP_REST_Response(array(
                 'status' => 'success',
@@ -461,6 +462,7 @@ class AATG_Text_Generator_Restpoint {
         if (!get_option('aatg_is_processing', false)) {
             update_option('aatg_processing_total', 0);
             update_option('aatg_processing_current', 0);
+            update_option('aatg_processing_skipped', 0);
             return;
         }
 
@@ -472,24 +474,34 @@ class AATG_Text_Generator_Restpoint {
             'offset'         => get_option('aatg_processing_current', 0)
         );
 
-        // If not rewriting all, fetch images without alt text
-        if (!$this->rewrite_all) {
+        // A Media Library bulk action records the exact selection. Page through
+        // that list rather than the whole library, so we only ever touch the
+        // images the user actually picked. Mirrors process_next_image().
+        $bulk_ids = get_transient('aatg_bulk_generation_ids');
+
+        if ($bulk_ids && is_array($bulk_ids)) {
+            $args['post__in'] = $bulk_ids;
+            $args['orderby']  = 'post__in';
+        } elseif (!$this->rewrite_all) {
+            // If not rewriting all, fetch images without alt text
             $ids = $this->get_images_without_alt_text_ids();
             if (empty($ids)) {
-                update_option('aatg_is_processing', false);
-                update_option('aatg_processing_total', 0);
-                update_option('aatg_processing_current', 0);
+                $this->finish_processing();
                 return;
             }
             $args['post__in'] = $ids;
+
+            // This candidate list SHRINKS as images gain alt text, so paging it
+            // with a progress-based offset walks off the front of the queue and
+            // silently skips images. Step past only the ones we couldn't
+            // process — everything successful drops out of the list by itself.
+            $args['offset'] = get_option('aatg_processing_skipped', 0);
         }
-    
+
         $media_items = get_posts($args);
-    
+
         if (empty($media_items)) {
-            update_option('aatg_is_processing', false);
-            update_option('aatg_processing_total', 0);
-            update_option('aatg_processing_current', 0);
+            $this->finish_processing();
             return;
         }
 
@@ -502,37 +514,65 @@ class AATG_Text_Generator_Restpoint {
                 return;
             }
 
+            // `current` is both the progress counter and (for fixed-list runs)
+            // the query offset, so it advances for every image taken off the
+            // queue — including failures. Advancing only on success re-fetched
+            // the same failing image on every batch and the run never moved on.
+            $current++;
+            $saved = false;
+
             $image_url = $admin_instance->get_image_url_by_size($item->ID, 'thumbnail');
-            
-            if (!$image_url) {
-                continue;
+
+            if ($image_url) {
+                try {
+                    $alt_text = $admin_instance->generate_alt_text_with_ai(
+                        $image_url,
+                        array('attachment_id' => $item->ID, 'source' => 'bulk')
+                    );
+
+                    if ($alt_text) {
+                        // Route through the shared saver so add-on hooks and the
+                        // Title/Caption/Description mirroring apply here too.
+                        $admin_instance->save_generated_alt_text(
+                            $item->ID,
+                            $alt_text,
+                            array('source' => 'bulk')
+                        );
+                        $saved = true;
+                    }
+                } catch (Exception $e) {
+                    // Leave $saved false; counted as skipped below.
+                }
             }
 
-            try {
-                $alt_text = $admin_instance->generate_alt_text_with_ai($image_url);
-        
-                if ($alt_text) {
-                    update_post_meta($item->ID, '_wp_attachment_image_alt', $alt_text);
-                    $current++;
-                    update_option('aatg_processing_current', $current);
+            // An image we couldn't process stays in the "missing alt text" query,
+            // so that run needs to step over it explicitly or it would be
+            // re-fetched forever.
+            if (!$saved) {
+                update_option('aatg_processing_skipped', get_option('aatg_processing_skipped', 0) + 1);
+            }
 
-                    // Check if we've processed all images
-                    if ($current >= $total) {
-                        update_option('aatg_is_processing', false);
-                        update_option('aatg_processing_total', 0);
-                        update_option('aatg_processing_current', 0);
-                        delete_transient('aatg_bulk_generation_ids');
-                        return;
-                    }
-                }
-            } catch (Exception $e) {
-                continue;
+            update_option('aatg_processing_current', $current);
+
+            // Check if we've processed all images
+            if ($total > 0 && $current >= $total) {
+                $this->finish_processing();
+                return;
             }
         }
-    
+
         if (get_option('aatg_is_processing', false)) {
             wp_schedule_single_event(time() + 5, 'ai_process_media_batch', array($batch_size));
         }
+	}
+
+	/** Clear all bulk-run state. Terminal step for every finish path. */
+	private function finish_processing() {
+        update_option('aatg_is_processing', false);
+        update_option('aatg_processing_total', 0);
+        update_option('aatg_processing_current', 0);
+        update_option('aatg_processing_skipped', 0);
+        delete_transient('aatg_bulk_generation_ids');
 	}
 
 	private function get_images_without_alt_text_ids() {

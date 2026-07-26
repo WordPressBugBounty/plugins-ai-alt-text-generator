@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.5.4
+Stable tag: 2.5.5
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -130,6 +130,14 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.5.5 =
+- **Fixed: the Media Library "Generate Alt Text" bulk action only ever processed the first selected image.** The background job that handles the rest exited immediately because the bulk action never flagged a run as started, so the remaining images were silently dropped.
+- **Fixed: bulk generation ignored your selection.** Once the background job did run, it worked through the whole media library instead of the images you picked. It now processes exactly the selection.
+- **Fixed: bulk runs skipped images.** When generating for "images without alt text", the queue shrank as images were processed while the read position kept advancing, so a large run could silently miss a substantial share of the library.
+- Fixed: an image that failed to generate could stall a bulk run instead of being skipped.
+- Bulk generation now applies the Title / Caption / Description settings and add-on filters, matching single-image generation.
+- The Media Library bulk action now reports what happened (started, nothing selected, or a run already in progress) instead of redirecting silently.
 
 = 2.5.4 =
 - **Fixed: managed credits now actually generate alt text.** A result-format mismatch caused managed-mode generation to fail on every path (bulk, single, upload, WP-CLI). This was the root cause behind "nothing happens" reports in managed mode.

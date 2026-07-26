@@ -196,6 +196,7 @@ class AATG_Text_Generator {
 		$this->loader->add_filter( 'bulk_actions-upload', $plugin_admin, 'add_bulk_action_option' );
 		$this->loader->add_filter( 'handle_bulk_actions-upload', $plugin_admin, 'handle_bulk_action', 10, 3 );
 
+        $this->loader->add_action('admin_notices', $plugin_admin, 'show_bulk_action_result_notice');
         $this->loader->add_action('admin_notices', $plugin_admin, 'show_bulk_processing_notice');
         $this->loader->add_action('admin_notices', $plugin_admin, 'show_woocommerce_upsell_notice');
         $this->loader->add_action('admin_init', $plugin_admin, 'maybe_dismiss_woocommerce_upsell');
