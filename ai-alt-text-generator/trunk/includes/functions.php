@@ -22,6 +22,7 @@ if ( ! function_exists( 'aatg_text_generator_default_options' ) ) :
 			'set_title' => false,
 			'set_caption' => false,
 			'set_description' => false,
+			'protected_alt_words' => '',
 			'managed_mode' => false,
 			'managed_email' => '',
 			'managed_token' => '',
@@ -119,6 +120,75 @@ endif;
  * @param array  $context       Request context (e.g. 'source').
  * @return string The alt text that was saved (possibly filtered); empty string if nothing saved.
  */
+/**
+ * Split the "protected words" setting into a clean list of search terms.
+ *
+ * @since 2.6.0
+ *
+ * @param string $raw Comma-separated words from the setting.
+ * @return array Lower-cased, de-duplicated, non-empty terms.
+ */
+if ( ! function_exists( 'aatg_protected_alt_words' ) ) :
+	function aatg_protected_alt_words( $raw ) {
+		$words = array_map( 'trim', explode( ',', (string) $raw ) );
+		$words = array_filter(
+			array_map( 'strtolower', $words ),
+			static function ( $w ) {
+				return '' !== $w;
+			}
+		);
+
+		return array_values( array_unique( $words ) );
+	}
+endif;
+
+/**
+ * Protect hand-written alt text from being overwritten.
+ *
+ * When "Process All Images" is on, generation replaces alt text that already
+ * exists. Users often have images they curated by hand (logos, people's names,
+ * campaign wording) that should survive a bulk run. This lets them list words
+ * to look for: if an image's CURRENT alt text contains any of them, the newly
+ * generated text is discarded and the existing value is left alone.
+ *
+ * Implemented on the public `aatg_alt_text` filter rather than inside the
+ * generation paths, so it applies everywhere (bulk, single, upload, CLI) for
+ * free and stays consistent with how add-ons extend the same behaviour.
+ *
+ * Returning an empty string is the documented "skip this image" signal.
+ *
+ * @since 2.6.0
+ *
+ * @param string $alt_text      Newly generated alt text.
+ * @param int    $attachment_id Attachment ID.
+ * @return string Empty string to skip, otherwise the alt text unchanged.
+ */
+if ( ! function_exists( 'aatg_protect_existing_alt_text' ) ) :
+	function aatg_protect_existing_alt_text( $alt_text, $attachment_id ) {
+		$opts  = aatg_text_generator_get_options();
+		$words = aatg_protected_alt_words( isset( $opts['protected_alt_words'] ) ? $opts['protected_alt_words'] : '' );
+
+		if ( empty( $words ) ) {
+			return $alt_text;
+		}
+
+		$existing = (string) get_post_meta( $attachment_id, '_wp_attachment_image_alt', true );
+		if ( '' === trim( $existing ) ) {
+			return $alt_text; // Nothing to protect.
+		}
+
+		$haystack = strtolower( $existing );
+		foreach ( $words as $word ) {
+			if ( false !== strpos( $haystack, $word ) ) {
+				return '';
+			}
+		}
+
+		return $alt_text;
+	}
+endif;
+add_filter( 'aatg_alt_text', 'aatg_protect_existing_alt_text', 5, 2 );
+
 if ( ! function_exists( 'aatg_save_generated_alt_text' ) ) :
 	function aatg_save_generated_alt_text( $attachment_id, $alt_text, $context = array() ) {
 		$context = array_merge( array( 'attachment_id' => $attachment_id ), $context );

@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.5.5
+Stable tag: 2.6.0
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -130,6 +130,10 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.6.0 =
+- **New: protect alt text you wrote yourself.** Under Bulk Generation, list words such as "logo" or "sponsor" and any image whose current alt text contains one of them is left untouched — even with "Process All Images" turned on. Matching ignores case and works inside longer words, so "logo" also protects "Company logo".
+- The new rule applies everywhere alt text is saved: bulk runs, single images, on upload, and WP-CLI.
 
 = 2.5.5 =
 - **Fixed: the Media Library "Generate Alt Text" bulk action only ever processed the first selected image.** The background job that handles the rest exited immediately because the bulk action never flagged a run as started, so the remaining images were silently dropped.

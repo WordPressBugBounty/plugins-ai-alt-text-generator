@@ -960,6 +960,11 @@ class AATG_Text_Generator_Admin {
                                 'type' => 'boolean',
                                 'default' => $defaults['set_description']
                             ),
+                            'protected_alt_words' => array(
+                                'type' => 'string',
+                                'default' => $defaults['protected_alt_words'],
+                                'sanitize_callback' => 'sanitize_text_field'
+                            ),
                             'prompt' => array(
                                 'type' => 'string',
                                 'default' => $defaults['prompt']
