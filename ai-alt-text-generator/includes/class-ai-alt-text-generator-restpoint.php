@@ -393,6 +393,28 @@ class AATG_Text_Generator_Restpoint {
                 array('attachment_id' => $item->ID, 'source' => 'bulk')
             );
 
+            // An account-level failure (out of credits, not activated, disabled,
+            // bad token) will reject every remaining image in exactly the same
+            // way. Stop the run and tell the user why, instead of grinding
+            // through the whole library making doomed requests.
+            if (!$result['success']
+                && !empty($result['code'])
+                && function_exists('aatg_is_terminal_managed_error')
+                && aatg_is_terminal_managed_error($result['code'])
+            ) {
+                $this->finish_processing();
+
+                return new WP_REST_Response(array(
+                    'status'        => 'stopped',
+                    'code'          => $result['code'],
+                    'message'       => $result['message'],
+                    'upgrade_url'   => isset($result['upgrade_url']) ? $result['upgrade_url'] : '',
+                    'current'       => $current,
+                    'total'         => $total,
+                    'is_processing' => false,
+                ), 200);
+            }
+
             if (!$result['success']) {
                 throw new Exception($result['message']);
             }
@@ -542,6 +564,19 @@ class AATG_Text_Generator_Restpoint {
                     }
                 } catch (Exception $e) {
                     // Leave $saved false; counted as skipped below.
+                }
+            }
+
+            // generate_alt_text_with_ai() flattens every failure to an empty
+            // string, so the reason has to come from the transient the managed
+            // client records. Same rule as the REST path: an account-level dead
+            // end stops the run rather than repeating for every image left.
+            if (!$saved && function_exists('aatg_is_terminal_managed_error')) {
+                $last = get_transient('aatg_managed_last_error');
+                if ($last && aatg_is_terminal_managed_error($last)) {
+                    update_option('aatg_processing_current', $current);
+                    $this->finish_processing();
+                    return; // Deliberately not rescheduled.
                 }
             }
 

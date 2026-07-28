@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.6.0
+Stable tag: 2.6.1
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -130,6 +130,11 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.6.1 =
+- **Fixed: bulk generation no longer keeps retrying after your credits run out.** It used to treat "out of credits" like a single bad image and carry on to the next one, so a large library produced hundreds of failed attempts in a row while the progress bar told you nothing. It now stops as soon as it hits an account-level limit.
+- Bulk generation now explains why it stopped — out of credits, account not activated, or a connection problem — and tells you how many images it finished before stopping. Everything generated up to that point is saved.
+- The same rule applies to the Media Library bulk action running in the background.
 
 = 2.6.0 =
 - **New: protect alt text you wrote yourself.** Under Bulk Generation, list words such as "logo" or "sponsor" and any image whose current alt text contains one of them is left untouched — even with "Process All Images" turned on. Matching ignores case and works inside longer words, so "logo" also protects "Company logo".

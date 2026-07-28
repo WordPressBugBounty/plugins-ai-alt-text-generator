@@ -424,15 +424,41 @@ if ( ! function_exists( 'aatg_managed_generate' ) ) :
 		$code = wp_remote_retrieve_response_code( $resp );
 		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
 		if ( 200 === $code && ! empty( $data['alt_text'] ) ) {
+			// Clear unconditionally: a success proves the account is healthy, so a
+			// stale terminal code must not stop the next run.
+			delete_transient( 'aatg_managed_last_error' );
 			if ( isset( $data['credits_remaining'] ) ) {
 				set_transient( 'aatg_managed_credits', (int) $data['credits_remaining'], HOUR_IN_SECONDS );
-				delete_transient( 'aatg_managed_last_error' );
 			}
 			return $data['alt_text'];
 		}
 		$err = isset( $data['error'] ) ? $data['error'] : 'generation_failed';
 		set_transient( 'aatg_managed_last_error', $err, HOUR_IN_SECONDS );
-		return new WP_Error( 'aatg_managed', $err );
+		// Carry the store's upgrade link through so callers can offer a way out
+		// instead of just reporting the failure.
+		return new WP_Error( 'aatg_managed', $err, array(
+			'upgrade_url' => isset( $data['upgrade_url'] ) ? $data['upgrade_url'] : '',
+		) );
+	}
+endif;
+
+/**
+ * Is this managed-store failure fatal to a whole bulk run?
+ *
+ * Account-level states (out of credits, not activated, disabled, bad token)
+ * will reject every subsequent image identically, so continuing just burns
+ * requests and leaves the user staring at a progress bar that never explains
+ * itself. A per-image hiccup ('generation_failed', a provider timeout) is
+ * worth skipping past; these are not.
+ *
+ * @since 2.6.1
+ *
+ * @param string $code Raw error code from the store.
+ * @return bool True when the run should stop rather than continue.
+ */
+if ( ! function_exists( 'aatg_is_terminal_managed_error' ) ) :
+	function aatg_is_terminal_managed_error( $code ) {
+		return in_array( (string) $code, array( 'no_credits', 'pending', 'disabled', 'not_found' ), true );
 	}
 endif;
 
@@ -614,10 +640,17 @@ if ( ! function_exists( 'aatg_managed_pre_generate' ) ) :
 			// Non-null array short-circuits the provider path with a proper failure
 			// result, so callers surface a real message instead of falling through
 			// to the keyless provider (which would also fail).
+			$code = $alt->get_error_message();
+			$data = $alt->get_error_data();
+
+			// `code` and `upgrade_url` ride along so a bulk run can tell an
+			// account-level dead end from a one-off failure, and offer the fix.
 			return array(
-				'success'  => false,
-				'alt_text' => '',
-				'message'  => aatg_managed_error_message( $alt->get_error_message() ),
+				'success'     => false,
+				'alt_text'    => '',
+				'message'     => aatg_managed_error_message( $code ),
+				'code'        => $code,
+				'upgrade_url' => isset( $data['upgrade_url'] ) ? $data['upgrade_url'] : '',
 			);
 		}
 
