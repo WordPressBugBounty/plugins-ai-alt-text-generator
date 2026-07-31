@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.6.1
+Stable tag: 2.6.2
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -130,6 +130,12 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.6.2 =
+- **Fixed: bulk generation could die a few images into a large run.** A single failed request — a hosting timeout, a momentary 500, a burst limit on admin requests — used to kill the whole run silently. Failed requests are now retried up to 3 times with growing pauses, and if the run still has to stop, it tells you at which image, why, and that pressing Start resumes where it left off.
+- **Fixed: bulk generation sent full-size original images to the AI provider.** Very large originals (big photography uploads) could exhaust PHP memory or time limits and break the run at a consistent point. It now sends a resized rendition — faster, lighter on the server, cheaper on your API key, and just as accurate.
+- **Fixed: the "images without alt text" bulk run from the settings page could skip images and finish early.** The same shrinking-queue bug fixed for background runs in 2.5.5 also affected the settings-page runner; a 500-image run could silently miss up to half the library. Both runners now use the same corrected paging.
+- The completion message now reports how many images were skipped due to errors instead of always claiming full success.
 
 = 2.6.1 =
 - **Fixed: bulk generation no longer keeps retrying after your credits run out.** It used to treat "out of credits" like a single bad image and carry on to the next one, so a large library produced hundreds of failed attempts in a row while the progress bar told you nothing. It now stops as soon as it hits an account-level limit.

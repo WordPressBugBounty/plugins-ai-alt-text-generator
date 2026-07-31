@@ -280,9 +280,7 @@ class AATG_Text_Generator_Restpoint {
             $total = get_option('aatg_processing_total', 0);
 
             if ($current >= $total) {
-                update_option('aatg_is_processing', false);
-                update_option('aatg_processing_total', 0);
-                update_option('aatg_processing_current', 0);
+                $this->finish_processing();
                 return new WP_REST_Response(array(
                     'status' => 'completed',
                     'message' => 'All images processed',
@@ -308,11 +306,7 @@ class AATG_Text_Generator_Restpoint {
             } elseif (!$this->rewrite_all) {
                 $ids = $this->get_images_without_alt_text_ids();
                 if (empty($ids)) {
-                    update_option('aatg_is_processing', false);
-                    update_option('aatg_processing_total', 0);
-                    update_option('aatg_processing_current', 0);
-                    // Clear transient if it exists
-                    delete_transient('aatg_bulk_generation_ids');
+                    $this->finish_processing();
                     return new WP_REST_Response(array(
                         'status' => 'completed',
                         'message' => 'No more images to process',
@@ -321,16 +315,19 @@ class AATG_Text_Generator_Restpoint {
                     ), 200);
                 }
                 $args['post__in'] = $ids;
+
+                // This candidate list SHRINKS as images gain alt text, so paging
+                // it with a progress-based offset walks off the front of the
+                // queue and silently skips images. Step past only the ones we
+                // couldn't process — everything successful drops out of the
+                // list by itself. Mirrors process_media_batch().
+                $args['offset'] = get_option('aatg_processing_skipped', 0);
             }
 
             $media_items = get_posts($args);
             
             if (empty($media_items)) {
-                update_option('aatg_is_processing', false);
-                update_option('aatg_processing_total', 0);
-                update_option('aatg_processing_current', 0);
-                // Clear transient if it exists
-                delete_transient('aatg_bulk_generation_ids');
+                $this->finish_processing();
                 return new WP_REST_Response(array(
                     'status' => 'completed',
                     'message' => 'No more images to process',
@@ -352,32 +349,14 @@ class AATG_Text_Generator_Restpoint {
             
             $api_key = $options[$api_key_field];
 
-            // Get image file path
-            $upload_dir = wp_upload_dir();
-            $image_meta = wp_get_attachment_metadata($item->ID);
-            
-            if (!$image_meta || !isset($image_meta['file'])) {
-                throw new Exception('Failed to get image metadata');
-            }
-
-            // Get the full server path to the image
-            $image_path = $upload_dir['basedir'] . '/' . $image_meta['file'];
-
-            // Check if file exists
-            if (!file_exists($image_path)) {
-                throw new Exception('Image file not found');
-            }
-
-            // Read image file directly
-            $image_data = file_get_contents($image_path);
-            if ($image_data === false) {
-                throw new Exception('Failed to read image file');
-            }
-
-            // Convert image to base64
-            $image_base64 = base64_encode($image_data);
+            // A sized rendition, not the original: base64-encoding a 20 MB
+            // camera file balloons PHP memory and request time enough to take
+            // down the whole request on some hosts, and alt text doesn't need
+            // the extra pixels. Falls back to the original when no rendition
+            // exists (small images).
+            $image_base64 = aatg_get_image_base64_for_attachment($item->ID);
             if (empty($image_base64)) {
-                throw new Exception('Failed to process image');
+                throw new Exception('Failed to read image file');
             }
 
             // Generate alt text using the selected provider
@@ -443,7 +422,11 @@ class AATG_Text_Generator_Restpoint {
             // Skip this image but continue processing
             $current++;
             update_option('aatg_processing_current', $current);
-            
+
+            // A failed image keeps its empty alt text, so the missing-alt
+            // query would hand it back forever; the query offset steps past it.
+            update_option('aatg_processing_skipped', get_option('aatg_processing_skipped', 0) + 1);
+
             return new WP_REST_Response(array(
                 'status' => 'error',
                 'message' => $e->getMessage(),
