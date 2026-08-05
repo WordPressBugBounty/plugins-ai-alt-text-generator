@@ -427,17 +427,24 @@ if ( ! function_exists( 'aatg_managed_generate' ) ) :
 			// Clear unconditionally: a success proves the account is healthy, so a
 			// stale terminal code must not stop the next run.
 			delete_transient( 'aatg_managed_last_error' );
+			// Credits are flowing again (upgrade, period reset, bonus grant) — retire
+			// the out-of-credits notice.
+			aatg_managed_clear_at_limit();
 			if ( isset( $data['credits_remaining'] ) ) {
 				set_transient( 'aatg_managed_credits', (int) $data['credits_remaining'], HOUR_IN_SECONDS );
 			}
 			return $data['alt_text'];
 		}
-		$err = isset( $data['error'] ) ? $data['error'] : 'generation_failed';
+		$err         = isset( $data['error'] ) ? $data['error'] : 'generation_failed';
+		$upgrade_url = isset( $data['upgrade_url'] ) ? $data['upgrade_url'] : '';
 		set_transient( 'aatg_managed_last_error', $err, HOUR_IN_SECONDS );
+		if ( 'no_credits' === $err ) {
+			aatg_managed_flag_at_limit( $upgrade_url );
+		}
 		// Carry the store's upgrade link through so callers can offer a way out
 		// instead of just reporting the failure.
 		return new WP_Error( 'aatg_managed', $err, array(
-			'upgrade_url' => isset( $data['upgrade_url'] ) ? $data['upgrade_url'] : '',
+			'upgrade_url' => $upgrade_url,
 		) );
 	}
 endif;
@@ -542,6 +549,94 @@ if ( ! function_exists( 'aatg_managed_error_message' ) ) :
 					$code
 				);
 		}
+	}
+endif;
+
+/**
+ * Record that this site has run out of managed credits.
+ *
+ * Stored in an option rather than a transient on purpose: the point of this flag
+ * is to survive long enough to be seen. A bulk run that hits the wall at 3am
+ * should still be explained when someone next opens wp-admin, and the one-hour
+ * `aatg_managed_last_error` transient is long gone by then.
+ *
+ * @since 2.6.3
+ * @param string $upgrade_url Store-supplied link to the upgrade page.
+ * @return void
+ */
+if ( ! function_exists( 'aatg_managed_flag_at_limit' ) ) :
+	function aatg_managed_flag_at_limit( $upgrade_url = '' ) {
+		$existing = get_option( 'aatg_managed_at_limit', false );
+		// Keep the first timestamp: "since" should mean when the wall was first
+		// hit, not when the user most recently retried.
+		$since = ( is_array( $existing ) && ! empty( $existing['since'] ) ) ? (int) $existing['since'] : time();
+		update_option( 'aatg_managed_at_limit', array(
+			'since'       => $since,
+			'upgrade_url' => esc_url_raw( $upgrade_url ),
+		) );
+	}
+endif;
+
+/**
+ * Clear the out-of-credits flag.
+ *
+ * Also resets every user's snooze, because the next time this site runs dry it
+ * is a new event: someone who snoozed in June should not be silently blocked in
+ * August.
+ *
+ * @since 2.6.3
+ * @return void
+ */
+if ( ! function_exists( 'aatg_managed_clear_at_limit' ) ) :
+	function aatg_managed_clear_at_limit() {
+		if ( false === get_option( 'aatg_managed_at_limit', false ) ) {
+			return;
+		}
+		delete_option( 'aatg_managed_at_limit' );
+		delete_metadata( 'user', 0, 'aatg_credit_notice_snoozed', '', true );
+	}
+endif;
+
+/**
+ * Current out-of-credits state, or false when the site still has credits.
+ *
+ * @since 2.6.3
+ * @return array|false array( 'since' => int, 'upgrade_url' => string )
+ */
+if ( ! function_exists( 'aatg_managed_at_limit' ) ) :
+	function aatg_managed_at_limit() {
+		$state = get_option( 'aatg_managed_at_limit', false );
+		return ( is_array( $state ) && ! empty( $state['since'] ) ) ? $state : false;
+	}
+endif;
+
+/**
+ * Build the store upgrade link for an out-of-credits site.
+ *
+ * Threads `ref` (the non-secret account reference) so a purchase upgrades THIS
+ * account rather than minting an unlinked one, and tags the source so the store
+ * can tell which prompt actually converts.
+ *
+ * @since 2.6.3
+ * @param string $medium   utm_medium value.
+ * @param string $campaign utm_campaign value.
+ * @return string
+ */
+if ( ! function_exists( 'aatg_managed_upgrade_url' ) ) :
+	function aatg_managed_upgrade_url( $medium = 'out_of_credits', $campaign = 'admin_notice' ) {
+		$state = aatg_managed_at_limit();
+		$base  = ( $state && ! empty( $state['upgrade_url'] ) ) ? $state['upgrade_url'] : aatg_store_url() . '/credits';
+		$args  = array(
+			'utm_source'   => 'plugin',
+			'utm_medium'   => $medium,
+			'utm_campaign' => $campaign,
+		);
+		$o = aatg_text_generator_get_options();
+		if ( ! empty( $o['managed_ref'] ) ) {
+			// add_query_arg() does not encode values, so do it here.
+			$args['ref'] = rawurlencode( $o['managed_ref'] );
+		}
+		return add_query_arg( $args, $base );
 	}
 endif;
 

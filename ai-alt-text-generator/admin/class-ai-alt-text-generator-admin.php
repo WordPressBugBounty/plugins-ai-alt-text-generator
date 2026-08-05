@@ -285,6 +285,79 @@ class AATG_Text_Generator_Admin {
     }
 
     /**
+     * Tell a site that has run out of managed credits, in wp-admin — the only
+     * place we can reach them.
+     *
+     * Managed accounts are created silently by aatg_maybe_autoconnect_managed()
+     * with no email address, so the overwhelming majority of out-of-credit sites
+     * have no contact details on file and cannot be emailed. Without this notice
+     * a site whose bulk run stopped at the credit wall only finds out by
+     * reopening the plugin's settings screen, which most people never do.
+     *
+     * Snoozed for a week rather than dismissed forever: generation is genuinely
+     * paused in this state, so "never mention it again" would leave the user
+     * with a plugin that silently does nothing.
+     */
+    public function show_credit_limit_notice() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return;
+        }
+        if ( ! function_exists( 'aatg_managed_at_limit' ) || ! aatg_managed_mode_active() ) {
+            return;
+        }
+        $state = aatg_managed_at_limit();
+        if ( ! $state ) {
+            return;
+        }
+        $snoozed = (int) get_user_meta( get_current_user_id(), 'aatg_credit_notice_snoozed', true );
+        if ( $snoozed && ( time() - $snoozed ) < WEEK_IN_SECONDS ) {
+            return;
+        }
+        // Media and plugin screens are where someone is thinking about images;
+        // the dashboard catches everyone else.
+        $screen   = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+        $relevant = $screen && (
+            false !== strpos( $screen->id, 'ai-alt-text' ) ||
+            'dashboard' === $screen->id ||
+            'upload' === $screen->id ||
+            'plugins' === $screen->id
+        );
+        if ( ! $relevant ) {
+            return;
+        }
+        $upgrade_url = aatg_managed_upgrade_url( 'out_of_credits', 'admin_notice' );
+        $snooze_url  = wp_nonce_url( add_query_arg( 'aatg_snooze_credit_notice', '1' ), 'aatg_snooze_credit_notice' );
+        $paused_for  = human_time_diff( (int) $state['since'], time() );
+        ?>
+        <div class="notice notice-warning">
+            <p>
+                <strong><?php esc_html_e( 'AI Alt Text Generator has run out of credits.', 'ai-alt-text-generator' ); ?></strong>
+                <?php
+                printf(
+                    /* translators: %s: human-readable duration, e.g. "2 days". */
+                    esc_html__( 'New images have not been getting alt text for %s. Add credits to start generating again — your settings and existing alt text are untouched.', 'ai-alt-text-generator' ),
+                    esc_html( $paused_for )
+                );
+                ?>
+            </p>
+            <p>
+                <a href="<?php echo esc_url( $upgrade_url ); ?>" target="_blank" rel="noreferrer noopener" class="button button-primary"><?php esc_html_e( 'Add credits', 'ai-alt-text-generator' ); ?></a>
+                <a href="<?php echo esc_url( $snooze_url ); ?>" class="button-link" style="margin-left:8px;"><?php esc_html_e( 'Remind me in a week', 'ai-alt-text-generator' ); ?></a>
+            </p>
+        </div>
+        <?php
+    }
+
+    /** Snooze the out-of-credits notice for a week. */
+    public function maybe_snooze_credit_notice() {
+        if ( isset( $_GET['aatg_snooze_credit_notice'] ) && current_user_can( 'manage_options' ) && check_admin_referer( 'aatg_snooze_credit_notice' ) ) {
+            update_user_meta( get_current_user_id(), 'aatg_credit_notice_snoozed', time() );
+            wp_safe_redirect( remove_query_arg( array( 'aatg_snooze_credit_notice', '_wpnonce' ) ) );
+            exit;
+        }
+    }
+
+    /**
      * Ask for a WordPress.org review after the user has gotten real value (20+
      * images generated). Review velocity is our biggest conversion lever, and
      * this is the highest-intent moment to ask. One-time, dismissible.

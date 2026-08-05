@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.6.1
+Stable tag: 2.6.3
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -75,7 +75,7 @@ Need automation at scale? The optional Pro add-on builds on this free plugin wit
 - A coverage analytics dashboard to track your progress toward 100%
 - Automatic updates and priority support
 
-Learn more at https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=pro — the free plugin remains fully functional on its own.
+[Learn more about Pro](https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=pro) — the free plugin remains fully functional on its own.
 
 == Installation ==
 
@@ -94,7 +94,7 @@ Learn more at https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&u
 No. The plugin works out of the box with the built-in managed credits service — no API key and no signup. Every site gets 50 free images per month. If you'd rather run on your own AI account, you can optionally add your own OpenAI or Anthropic API key in the Advanced settings.
 
 = What are managed credits and are they free? =
-Managed credits let the plugin generate alt text through the AI Alt Text Generator managed service without you configuring anything. Every site gets **50 free images per month**. If you need more, affordable paid credit plans are available. This uses an external, account-based service and is optional beyond the free tier. Learn more at https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=managed_credits
+Managed credits let the plugin generate alt text through the AI Alt Text Generator managed service without you configuring anything. Every site gets **50 free images per month**. If you need more, affordable paid credit plans are available. This uses an external, account-based service and is optional beyond the free tier. [Learn more about managed credits](https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=managed_credits).
 
 = Can I use my own OpenAI or Anthropic API key instead? =
 Yes. In the Advanced settings you can add your own OpenAI or Anthropic API key and generate directly on your own account — at cost, with no per-image fees and no vendor lock-in. You can use any vision-capable model your provider offers; the plugin ships with a sensible, low-cost default and lets you change the model anytime.
@@ -103,7 +103,7 @@ Yes. In the Advanced settings you can add your own OpenAI or Anthropic API key a
 Yes — that's the point. It produces WCAG-aligned alt text to help you meet WCAG 2.2, ADA, Section 508, and European Accessibility Act (EAA) requirements. It's a practical fit for nonprofits, churches, schools, and small businesses that need accessible websites without a developer on staff.
 
 = Is there a Pro version? =
-Yes. AI Alt Text Generator Pro is an optional add-on that adds WooCommerce product context, scheduled background scans that describe images automatically, a coverage analytics dashboard, automatic updates, and priority support. The free plugin is fully functional on its own. Learn more at https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=pro
+Yes. AI Alt Text Generator Pro is an optional add-on that adds WooCommerce product context, scheduled background scans that describe images automatically, a coverage analytics dashboard, automatic updates, and priority support. The free plugin is fully functional on its own. [Learn more about Pro](https://store.lessbutmore.ai?utm_source=plugin&utm_medium=readme&utm_campaign=pro).
 
 = How does this plugin use the AI service? =
 The plugin sends images to the AI service — the managed credits service by default, or your selected provider's API if you've added your own key — which returns the generated alt text. This process requires an active internet connection and the transmission of image data to the service's servers.
@@ -130,6 +130,15 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.6.3 =
+- **New: the plugin now tells you when it has run out of credits.** Previously, if a bulk run hit the monthly limit overnight — or you navigated away mid-run — nothing said so afterwards, and new uploads quietly stopped getting alt text. A notice now appears in your dashboard and Media Library explaining that generation is paused, how long it has been paused, and how to add credits. It disappears on its own the moment credits are available again, and can be snoozed for a week.
+
+= 2.6.2 =
+- **Fixed: bulk generation could die a few images into a large run.** A single failed request — a hosting timeout, a momentary 500, a burst limit on admin requests — used to kill the whole run silently. Failed requests are now retried up to 3 times with growing pauses, and if the run still has to stop, it tells you at which image, why, and that pressing Start resumes where it left off.
+- **Fixed: bulk generation sent full-size original images to the AI provider.** Very large originals (big photography uploads) could exhaust PHP memory or time limits and break the run at a consistent point. It now sends a resized rendition — faster, lighter on the server, cheaper on your API key, and just as accurate.
+- **Fixed: the "images without alt text" bulk run from the settings page could skip images and finish early.** The same shrinking-queue bug fixed for background runs in 2.5.5 also affected the settings-page runner; a 500-image run could silently miss up to half the library. Both runners now use the same corrected paging.
+- The completion message now reports how many images were skipped due to errors instead of always claiming full success.
 
 = 2.6.1 =
 - **Fixed: bulk generation no longer keeps retrying after your credits run out.** It used to treat "out of credits" like a single bad image and carry on to the next one, so a large library produced hundreds of failed attempts in a row while the progress bar told you nothing. It now stops as soon as it hits an account-level limit.
