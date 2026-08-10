@@ -247,7 +247,7 @@ const GeneralSettings = () => {
                     <Spacer marginTop={4}>
                         <TextControl
                             label={__('Model', 'ai-alt-text-generator')}
-                            help={__('Enter the exact model name (e.g., gpt-4o-mini, claude-3-haiku-20240307)', 'ai-alt-text-generator')}
+                            help={__('Enter the exact model name (e.g., gpt-4o, claude-sonnet-5)', 'ai-alt-text-generator')}
                             value={model}
                             onChange={(value) => useUpdateStateSettings('model', value)}
                         />

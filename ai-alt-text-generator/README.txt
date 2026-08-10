@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.6.3
+Stable tag: 2.6.5
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -130,6 +130,16 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.6.5 =
+- **Fixed: switching the AI Provider in settings never saved.** Changing the provider and pressing Save Changes silently kept the old provider — the select looked switched but the stored setting was unchanged, so Anthropic was unreachable through the UI. Thanks to the detailed community bug report for pinpointing this.
+- **Fixed: Anthropic could not be used at all.** Every bundled Claude model had been retired by Anthropic, and because key validation generated a test message with one of them, a perfectly valid API key reported "Failed to validate API key." Validation no longer depends on any particular model, and the bundled lists now use stable model aliases (claude-sonnet-5, claude-haiku-4-5, claude-opus-5) that keep working when new versions ship.
+- **Fixed: the Model setting was saved but never used.** Both providers always generated with a hardcoded default; the model you chose is now actually sent with each request.
+- **New: the Model field is a real dropdown of models your API key can use right now**, fetched live from your provider (cached 12 hours, with a refresh button). If a saved model is ever retired again, the plugin automatically falls back to a current default instead of failing on every image — and the settings screen tells you.
+- **Changed: the OpenAI default model is now gpt-4o instead of gpt-4o-mini.** On image inputs OpenAI's mini tier bills roughly 20x the image tokens, making gpt-4o-mini both more expensive per image and noticeably worse at alt text. Your saved model choice is respected either way.
+
+= 2.6.4 =
+- **Performance: the plugin no longer loads any files on your site's public pages.** Leftover boilerplate enqueued an empty stylesheet and an empty script (which also pulled in jQuery as a dependency) on every visitor-facing page. All of the plugin's work happens in wp-admin, so these served no purpose — they have been removed, saving two requests on every page load. Thanks to the user who reported this.
 
 = 2.6.3 =
 - **New: the plugin now tells you when it has run out of credits.** Previously, if a bulk run hit the monthly limit overnight — or you navigated away mid-run — nothing said so afterwards, and new uploads quietly stopped getting alt text. A notice now appears in your dashboard and Media Library explaining that generation is paused, how long it has been paused, and how to add credits. It disappears on its own the moment credits are available again, and can be snoozed for a week.

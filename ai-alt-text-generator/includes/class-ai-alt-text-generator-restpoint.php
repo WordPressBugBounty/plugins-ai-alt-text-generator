@@ -1,5 +1,9 @@
 <?php
 
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 class AATG_Text_Generator_Restpoint {
     private $batch_size = 10;
 	private $rewrite_all = false;
@@ -75,6 +79,14 @@ class AATG_Text_Generator_Restpoint {
                     return current_user_can('manage_options');
                 },
             ),
+        ));
+
+        register_rest_route('ai-alt-text-generator/v1', '/models', array(
+            'methods' => 'GET',
+            'callback' => array($this, 'get_models'),
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            },
         ));
 
         register_rest_route('ai-alt-text-generator/v1', '/generate-test', array(
@@ -613,6 +625,46 @@ class AATG_Text_Generator_Restpoint {
 		return $ids;
 	}
 
+    /**
+     * List the models a provider's account can actually call right now.
+     *
+     * GET /ai-alt-text-generator/v1/models
+     *   ?provider  Defaults to the saved ai_provider.
+     *   ?key       Use this key instead of the saved one (so the list can
+     *              load before the key is saved).
+     *   ?refresh   Truthy bypasses the 12h cache.
+     *
+     * @since 2.6.5
+     */
+    public function get_models(WP_REST_Request $request) {
+        $options = get_option('aatg_text_generator_options', array());
+        $provider_name = sanitize_text_field((string) $request->get_param('provider'));
+        if ('' === $provider_name) {
+            $provider_name = isset($options['ai_provider']) && $options['ai_provider'] ? $options['ai_provider'] : 'openai';
+        }
+
+        $provider = AATG_Provider_Factory::get_provider($provider_name);
+        if (!$provider) {
+            return new WP_REST_Response(array(
+                'error' => 'Unknown provider: ' . $provider_name,
+            ), 400);
+        }
+
+        $key = (string) $request->get_param('key');
+        $refresh_param = $request->get_param('refresh');
+        $refresh = !empty($refresh_param) && 'false' !== $refresh_param && '0' !== $refresh_param;
+
+        $available = $provider->get_available_models('' !== $key ? $key : null, $refresh);
+
+        return new WP_REST_Response(array(
+            'provider' => $provider_name,
+            'models'   => $available['models'],
+            'default'  => $provider->get_default_model(),
+            'current'  => $provider->resolve_model(),
+            'live'     => $available['live'],
+        ), 200);
+    }
+
     public function get_settings() {
         $defaults = aatg_text_generator_default_options();
         $options = get_option('aatg_text_generator_options', $defaults);
@@ -664,6 +716,17 @@ class AATG_Text_Generator_Restpoint {
 
         // Ensure we have all required fields
         $settings = wp_parse_args($settings, $defaults);
+
+        // A changed API key means the cached model catalog belongs to another
+        // account — flush it so the next lookup re-fetches.
+        foreach (AATG_Provider_Factory::get_providers() as $name => $provider) {
+            $field = $name . '_key';
+            $old_key = isset($existing[$field]) ? $existing[$field] : '';
+            $new_key = isset($settings[$field]) ? $settings[$field] : '';
+            if ($old_key !== $new_key) {
+                $provider->flush_model_cache();
+            }
+        }
 
         // Delete the option first to ensure it's updated
         delete_option('aatg_text_generator_options');

@@ -45,26 +45,17 @@ class AATG_Anthropic_Provider extends AATG_Abstract_AI_Provider {
             );
         }
 
-        // Test with a simple message to validate the key
-        $test_body = wp_json_encode([
-            'model' => $this->get_default_model(),
-            'max_tokens' => 10,
-            'messages' => [
-                [
-                    'role' => 'user',
-                    'content' => 'Hello'
-                ]
-            ]
-        ]);
-
+        // Validate with the models list endpoint: it authenticates without
+        // naming a model, so a retired model can never be misreported as a
+        // bad credential. (This mirrors how the OpenAI provider validates.)
         $response = $this->make_request(
-            'https://api.anthropic.com/v1/messages',
+            'https://api.anthropic.com/v1/models?limit=1',
             array(
                 'x-api-key' => $api_key,
-                'anthropic-version' => '2023-06-01',
-                'content-type' => 'application/json'
+                'anthropic-version' => '2023-06-01'
             ),
-            $test_body
+            '',
+            'GET'
         );
 
         $result = $this->handle_response($response, 'Anthropic');
@@ -111,7 +102,7 @@ class AATG_Anthropic_Provider extends AATG_Abstract_AI_Provider {
             $clean_base64 = preg_replace('/^data:image\/[^;]+;base64,/', '', $image_base64);
             
             $body = wp_json_encode([
-                'model' => $this->get_default_model(),
+                'model' => $this->resolve_model(),
                 'max_tokens' => 100,
                 'messages' => [
                     [
@@ -186,21 +177,64 @@ class AATG_Anthropic_Provider extends AATG_Abstract_AI_Provider {
      * @return array
      */
     public function get_supported_models() {
+        // Stable aliases only — dated snapshots get retired on a schedule,
+        // aliases keep working when a new snapshot ships.
         return apply_filters( 'aatg_supported_models', array(
-            'claude-3-haiku-20240307' => 'Claude 3 Haiku (Cheapest)',
-            'claude-3-5-sonnet-20241022' => 'Claude 3.5 Sonnet',
-            'claude-3-7-sonnet-20250219' => 'Claude 3.7 Sonnet',
+            'claude-haiku-4-5' => 'Claude Haiku 4.5 (Cheapest)',
+            'claude-sonnet-5' => 'Claude Sonnet 5',
+            'claude-opus-5' => 'Claude Opus 5 (Most capable)',
         ), 'anthropic' );
     }
-    
+
     /**
      * Get default model
-     * 
+     *
      * @return string
      */
     public function get_default_model() {
         /** @since 2.5.1 See aatg_default_model in the OpenAI provider. */
-        return apply_filters( 'aatg_default_model', 'claude-3-haiku-20240307', 'anthropic' );
+        return apply_filters( 'aatg_default_model', 'claude-sonnet-5', 'anthropic' );
+    }
+
+    /**
+     * Fetch the live model catalog from Anthropic.
+     *
+     * Dated snapshot ids are collapsed to their stable alias so the value
+     * offered (and stored) keeps working when a new snapshot ships.
+     *
+     * @since 2.6.5
+     * @param string $api_key
+     * @return array id => display label
+     */
+    protected function fetch_model_catalog($api_key) {
+        $response = $this->make_request(
+            'https://api.anthropic.com/v1/models?limit=100',
+            array(
+                'x-api-key' => $api_key,
+                'anthropic-version' => '2023-06-01'
+            ),
+            '',
+            'GET'
+        );
+
+        $result = $this->handle_response($response, 'Anthropic');
+        if (!$result['success'] || empty($result['data']['data']) || !is_array($result['data']['data'])) {
+            return array();
+        }
+
+        $catalog = array();
+        foreach ($result['data']['data'] as $entry) {
+            if (empty($entry['id'])) {
+                continue;
+            }
+            $alias = $this->to_alias($entry['id']);
+            if (isset($catalog[$alias])) {
+                continue;
+            }
+            $catalog[$alias] = !empty($entry['display_name']) ? $entry['display_name'] : $alias;
+        }
+
+        return $catalog;
     }
     
     /**

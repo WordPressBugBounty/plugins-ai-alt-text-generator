@@ -74,7 +74,6 @@ class AATG_Text_Generator {
 		$this->set_locale();
 		$this->define_include_hooks();
 		$this->define_admin_hooks();
-		$this->define_public_hooks();
 
 	}
 
@@ -86,7 +85,6 @@ class AATG_Text_Generator {
 	 * - AATG_Text_Generator_Loader. Orchestrates the hooks of the plugin.
 	 * - AATG_Text_Generator_i18n. Defines internationalization functionality.
 	 * - AATG_Text_Generator_Admin. Defines all hooks for the admin area.
-	 * - AATG_Text_Generator_Public. Defines all hooks for the public side of the site.
 	 *
 	 * Create an instance of the loader which will be used to register the hooks
 	 * with WordPress.
@@ -122,12 +120,6 @@ class AATG_Text_Generator {
 		 * The class responsible for defining all actions that occur in the admin area.
 		 */
 		require_once AATG_TEXT_GENERATOR_PATH . 'admin/class-ai-alt-text-generator-admin.php';
-
-		/**
-		 * The class responsible for defining all actions that occur in the public-facing
-		 * side of the site.
-		 */
-		require_once AATG_TEXT_GENERATOR_PATH . 'public/class-ai-alt-text-generator-public.php';
 
 		$this->loader = new AATG_Text_Generator_Loader();
 
@@ -207,21 +199,6 @@ class AATG_Text_Generator {
         $this->loader->add_action('wp_dashboard_setup', $plugin_admin, 'register_dashboard_widget');
 
 	}
-
-	/**
-	 * Register all of the hooks related to the public-facing functionality
-	 * of the plugin.
-	 *
-	 * @since    1.0.0
-	 * @access   private
-	 */
-	private function define_public_hooks() {
-
-		$plugin_public = new AATG_Text_Generator_Public( $this->get_plugin_name(), $this->get_version() );
-
-        $this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_public_resources' );
-
-    }
 
 	/**
 	 * Run the loader to execute all of the hooks with WordPress.
