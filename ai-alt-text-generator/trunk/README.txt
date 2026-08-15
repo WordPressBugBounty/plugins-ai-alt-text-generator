@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.6.5
+Stable tag: 2.6.6
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -130,6 +130,10 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.6.6 =
+- **Fixed: bulk generation retries provider failures instead of losing the image.** A rate limit or provider timeout during a bulk run used to skip that image permanently on its first failure — one site lost 86 of 115 images to a single rate-limited hour. The runner now retries each failed image up to 3 times with a growing pause before moving on.
+- **Fixed: bulk runs could silently skip images uploaded in the same second.** The processing queue had no fixed order, so on libraries where many images share an upload time (any imported library), paging could walk past some images and revisit others. The queue is now processed in a fixed order.
 
 = 2.6.5 =
 - **Fixed: switching the AI Provider in settings never saved.** Changing the provider and pressing Save Changes silently kept the old provider — the select looked switched but the stored setting was unchanged, so Anthropic was unreachable through the UI. Thanks to the detailed community bug report for pinpointing this.

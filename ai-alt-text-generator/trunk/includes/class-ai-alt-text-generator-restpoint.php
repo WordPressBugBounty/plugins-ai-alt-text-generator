@@ -222,6 +222,13 @@ class AATG_Text_Generator_Restpoint {
         return new WP_REST_Response(array('ok' => true), 200);
     }
 
+    /**
+     * Provider attempts per image in a bulk run before it is skipped.
+     * Covers transient failures (rate limits, timeouts); a genuinely broken
+     * image costs two extra tries and is then skipped as before.
+     */
+    const MAX_IMAGE_ATTEMPTS = 3;
+
     public function start_processing(WP_REST_Request $request) {
         try {
             // Clear any previous transient
@@ -258,6 +265,7 @@ class AATG_Text_Generator_Restpoint {
             update_option('aatg_processing_total', $total_images);
             update_option('aatg_processing_current', 0);
             update_option('aatg_processing_skipped', 0);
+            delete_option('aatg_processing_retry');
 
             return new WP_REST_Response(array(
                 'status' => 'success',
@@ -327,6 +335,10 @@ class AATG_Text_Generator_Restpoint {
                     ), 200);
                 }
                 $args['post__in'] = $ids;
+                // Follow the list's order exactly. The default (date) ties for
+                // images uploaded in the same second, and offset paging over an
+                // undefined order skips some images and revisits others.
+                $args['orderby'] = 'post__in';
 
                 // This candidate list SHRINKS as images gain alt text, so paging
                 // it with a progress-based offset walks off the front of the
@@ -407,8 +419,41 @@ class AATG_Text_Generator_Restpoint {
             }
 
             if (!$result['success']) {
+                // A provider failure arrives here as a well-formed error result,
+                // so the 2.6.2 retry (which only catches thrown transport
+                // errors) never saw it: every rate limit or provider timeout
+                // cost the user that image on the first try. One site lost 86
+                // of 115 images to a single rate-limited hour that way.
+                //
+                // Leave current/skipped untouched so the next call picks the
+                // SAME image, and track attempts server-side — the client
+                // cannot retry the right image once the counters have moved.
+                $retry    = get_option('aatg_processing_retry', array());
+                $attempts = (isset($retry['id']) && (int) $retry['id'] === (int) $item->ID)
+                    ? (int) $retry['attempts'] + 1
+                    : 1;
+
+                if ($attempts < self::MAX_IMAGE_ATTEMPTS) {
+                    update_option('aatg_processing_retry', array('id' => (int) $item->ID, 'attempts' => $attempts), false);
+
+                    return new WP_REST_Response(array(
+                        'status'        => 'retry',
+                        'message'       => $result['message'],
+                        'attempt'       => $attempts,
+                        // Grows with each attempt; the client sleeps this long
+                        // so the wait never runs inside a PHP request.
+                        'retry_in'      => $attempts * 5,
+                        'current'       => $current,
+                        'total'         => $total,
+                        'is_processing' => true,
+                    ), 200);
+                }
+
+                delete_option('aatg_processing_retry');
                 throw new Exception($result['message']);
             }
+
+            delete_option('aatg_processing_retry');
 
             $alt_text = $result['alt_text'];
 
@@ -507,6 +552,10 @@ class AATG_Text_Generator_Restpoint {
                 return;
             }
             $args['post__in'] = $ids;
+            // Follow the list's order exactly. The default (date) ties for
+            // images uploaded in the same second, and offset paging over an
+            // undefined order skips some images and revisits others.
+            $args['orderby'] = 'post__in';
 
             // This candidate list SHRINKS as images gain alt text, so paging it
             // with a progress-based offset walks off the front of the queue and
@@ -602,6 +651,7 @@ class AATG_Text_Generator_Restpoint {
         update_option('aatg_processing_total', 0);
         update_option('aatg_processing_current', 0);
         update_option('aatg_processing_skipped', 0);
+        delete_option('aatg_processing_retry');
         delete_transient('aatg_bulk_generation_ids');
 	}
 
@@ -615,6 +665,7 @@ class AATG_Text_Generator_Restpoint {
 			WHERE p.post_type = 'attachment'
 			AND p.post_mime_type LIKE 'image%'
 			AND (pm.meta_value IS NULL OR pm.meta_value = '')
+			ORDER BY p.ID ASC
 		";
 
 		$results = $wpdb->get_results($query);
