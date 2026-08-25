@@ -309,6 +309,11 @@ class AATG_Text_Generator_Admin {
         if ( ! $state ) {
             return;
         }
+        // A top-up or upgrade may have landed since the wall was hit; ask the
+        // store (throttled) before showing a banner that says otherwise.
+        if ( function_exists( 'aatg_managed_recheck_at_limit' ) && aatg_managed_recheck_at_limit() ) {
+            return;
+        }
         $snoozed = (int) get_user_meta( get_current_user_id(), 'aatg_credit_notice_snoozed', true );
         if ( $snoozed && ( time() - $snoozed ) < WEEK_IN_SECONDS ) {
             return;

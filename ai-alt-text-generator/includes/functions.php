@@ -611,6 +611,46 @@ if ( ! function_exists( 'aatg_managed_at_limit' ) ) :
 endif;
 
 /**
+ * Re-check a flagged out-of-credits site against the store and clear the flag
+ * if credits are back.
+ *
+ * The flag is normally retired by the next successful generation, but a buyer
+ * who just paid for a top-up and then opens the dashboard sees a stale "out of
+ * credits" banner until they run something — which reads as "my credits did not
+ * arrive". Poll the store at most once every few minutes while flagged so the
+ * banner disappears on its own.
+ *
+ * @since 2.6.7
+ * @param bool $force Skip the throttle (used by the settings status refresh).
+ * @return bool True when the flag was cleared.
+ */
+if ( ! function_exists( 'aatg_managed_recheck_at_limit' ) ) :
+	function aatg_managed_recheck_at_limit( $force = false ) {
+		if ( ! aatg_managed_at_limit() ) {
+			return false;
+		}
+		if ( ! $force && get_transient( 'aatg_managed_at_limit_checked' ) ) {
+			return false;
+		}
+		set_transient( 'aatg_managed_at_limit_checked', 1, 5 * MINUTE_IN_SECONDS );
+		$options = aatg_text_generator_get_options();
+		if ( empty( $options['managed_token'] ) ) {
+			return false;
+		}
+		$res = aatg_managed_status( $options['managed_token'] );
+		if ( is_wp_error( $res ) || empty( $res['ok'] ) ) {
+			return false;
+		}
+		if ( isset( $res['credits_remaining'] ) && (int) $res['credits_remaining'] > 0 ) {
+			aatg_managed_clear_at_limit();
+			set_transient( 'aatg_managed_credits', (int) $res['credits_remaining'], HOUR_IN_SECONDS );
+			return true;
+		}
+		return false;
+	}
+endif;
+
+/**
  * Build the store upgrade link for an out-of-credits site.
  *
  * Threads `ref` (the non-secret account reference) so a purchase upgrades THIS

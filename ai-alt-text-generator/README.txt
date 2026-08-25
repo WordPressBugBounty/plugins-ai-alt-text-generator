@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.6.6
+Stable tag: 2.6.7
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -130,6 +130,10 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.6.7 =
+- **Fixed: the "out of credits" banner stayed up after buying credits.** It only cleared on the next successful generation, so a site that had just paid for a top-up still saw "out of credits" on the dashboard until it ran again. The plugin now re-checks the balance with the store (at most every 5 minutes) while the banner is showing and removes it as soon as credits are back.
+- **Improved: top-up credits are shown separately on the settings page** ("4,917 credits left (0/50 plan + 4,917 top-up)") instead of an odd-looking "4917/50".
 
 = 2.6.6 =
 - **Fixed: bulk generation retries provider failures instead of losing the image.** A rate limit or provider timeout during a bulk run used to skip that image permanently on its first failure — one site lost 86 of 115 images to a single rate-limited hour. The runner now retries each failed image up to 3 times with a growing pause before moving on.

@@ -206,6 +206,9 @@ class AATG_Text_Generator_Restpoint {
         if (is_wp_error($res)) {
             return new WP_REST_Response(array('ok' => false, 'error' => $res->get_error_message()), 502);
         }
+        if (isset($res['credits_remaining']) && (int) $res['credits_remaining'] > 0 && function_exists('aatg_managed_clear_at_limit')) {
+            aatg_managed_clear_at_limit();
+        }
         $res['email'] = $options['managed_email'] ?? '';
         return new WP_REST_Response($res, 200);
     }
