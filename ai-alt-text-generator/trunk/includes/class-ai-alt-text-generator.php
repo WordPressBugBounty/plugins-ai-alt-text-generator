@@ -370,13 +370,13 @@ class AATG_Text_Generator {
 		// and get back the generated alt text
 
 		// For example, if using OpenAI:
-		$response = wp_remote_post('https://api.openai.com/v1/chat/completions', array(
-			'headers' => array(
-				'Authorization' => 'Bearer ' . $api_key,
-				'Content-Type' => 'application/json',
-			),
-			'body' => json_encode(array(
-				'model' => AATG_Provider_Factory::get_default_model( 'openai' ),
+		$model = AATG_Provider_Factory::get_default_model( 'openai' );
+
+		// GPT-5 and the o-series reject 'max_tokens' and a custom temperature,
+		// so the token limit is model-dependent. See AATG_OpenAI_Provider.
+		$body = array_merge(
+			array(
+				'model' => $model,
 				'messages' => array(
 					array(
 						'role' => 'user',
@@ -394,8 +394,16 @@ class AATG_Text_Generator {
 						)
 					)
 				),
-				'max_tokens' => 100
-			))
+			),
+			AATG_OpenAI_Provider::request_params_for_model( $model )
+		);
+
+		$response = wp_remote_post('https://api.openai.com/v1/chat/completions', array(
+			'headers' => array(
+				'Authorization' => 'Bearer ' . $api_key,
+				'Content-Type' => 'application/json',
+			),
+			'body' => wp_json_encode( $body )
 		));
 
 		if (is_wp_error($response)) {

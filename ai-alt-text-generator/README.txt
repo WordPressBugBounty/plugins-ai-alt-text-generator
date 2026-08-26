@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 6.9
 Requires PHP: 7.0
-Stable tag: 2.6.7
+Stable tag: 2.6.8
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -130,6 +130,11 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.6.8 =
+- **Fixed: "Unsupported parameter: 'max_tokens' is not supported with this model" when using GPT-5.** GPT-5 (and OpenAI's o-series) require `max_completion_tokens` instead of `max_tokens` and reject a custom temperature, so every generation failed for anyone who picked a GPT-5 model from the dropdown. The plugin now sends the request shape each model family expects, in the Media Library, bulk runs, WP-CLI, and the block editor button alike.
+- **Fixed: GPT-5 could return empty alt text.** Reasoning models spend part of their token budget on hidden reasoning, which the old 100-token cap could swallow whole. The budget is now sized for that, and if a model still runs out the error says so instead of "Invalid response from OpenAI API".
+- **Improved: an unrecognised model no longer fails the whole run.** If OpenAI rejects one optional request parameter, the plugin retries without it, so a model family released after this version still works.
 
 = 2.6.7 =
 - **Fixed: the "out of credits" banner stayed up after buying credits.** It only cleared on the next successful generation, so a site that had just paid for a top-up still saw "out of credits" on the dashboard until it ran again. The plugin now re-checks the balance with the store (at most every 5 minutes) while the banner is showing and removes it as soon as credits are back.
@@ -293,6 +298,9 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 - Initial release
 
 == Upgrade Notice ==
+
+= 2.6.8 =
+Fixes generation failing with "Unsupported parameter: 'max_tokens'" on GPT-5 models. Update if you selected GPT-5, GPT-5 Mini, or an o-series model.
 
 = 2.5.3 =
 Managed credits are now the default — generate WCAG-friendly alt text with no API key and no signup, 50 free images/month on every site. Bring-your-own key is still available as an advanced option.

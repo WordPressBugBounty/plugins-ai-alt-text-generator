@@ -81,41 +81,34 @@ class AATG_OpenAI_Provider extends AATG_Abstract_AI_Provider {
     public function generate_alt_text($image_base64, $prompt, $language, $api_key) {
         try {
             $prompt_with_lang = $prompt . ' Write it in this language: ' . $language;
-            
-            $body = wp_json_encode([
-                'model' => $this->resolve_model(),
-                'temperature' => 0.6,
-                'max_tokens' => 100,
-                'messages' => [
-                    [
-                        'role' => 'user',
-                        'content' => [
-                            [
-                                'type' => 'text',
-                                'text' => $prompt_with_lang,
-                            ],
-                            [
-                                'type' => 'image_url',
-                                'image_url' => [
-                                    'url' => 'data:image/jpeg;base64,' . $image_base64
+            $model = $this->resolve_model();
+
+            $params = array_merge(
+                array(
+                    'model' => $model,
+                    'messages' => [
+                        [
+                            'role' => 'user',
+                            'content' => [
+                                [
+                                    'type' => 'text',
+                                    'text' => $prompt_with_lang,
+                                ],
+                                [
+                                    'type' => 'image_url',
+                                    'image_url' => [
+                                        'url' => 'data:image/jpeg;base64,' . $image_base64
+                                    ],
                                 ],
                             ],
                         ],
                     ],
-                ],
-            ]);
-
-            $response = $this->make_request(
-                'https://api.openai.com/v1/chat/completions',
-                array(
-                    'Authorization' => 'Bearer ' . $api_key,
-                    'Content-Type' => 'application/json',
                 ),
-                $body
+                self::request_params_for_model($model)
             );
 
-            $result = $this->handle_response($response, 'OpenAI');
-            
+            $result = $this->request_completion($params, $api_key);
+
             if (!$result['success']) {
                 return array(
                     'success' => false,
@@ -125,16 +118,18 @@ class AATG_OpenAI_Provider extends AATG_Abstract_AI_Provider {
             }
 
             $data = $result['data'];
-            if (!isset($data['choices'][0]['message']['content'])) {
+            $alt_text = isset($data['choices'][0]['message']['content'])
+                ? trim((string) $data['choices'][0]['message']['content'])
+                : '';
+
+            if ('' === $alt_text) {
                 return array(
                     'success' => false,
                     'alt_text' => '',
-                    'message' => 'Invalid response from OpenAI API'
+                    'message' => $this->empty_completion_message($data, $model)
                 );
             }
 
-            $alt_text = trim($data['choices'][0]['message']['content']);
-            
             return array(
                 'success' => true,
                 'alt_text' => $alt_text,
@@ -148,6 +143,195 @@ class AATG_OpenAI_Provider extends AATG_Abstract_AI_Provider {
                 'message' => 'Error: ' . $e->getMessage()
             );
         }
+    }
+
+    /**
+     * Whether a model expects OpenAI's reasoning-model request shape.
+     *
+     * GPT-5 and the o-series reject `max_tokens` outright — "Unsupported
+     * parameter: 'max_tokens' is not supported with this model. Use
+     * 'max_completion_tokens' instead." — and accept only the default
+     * temperature. They also spend part of the completion budget on hidden
+     * reasoning tokens, so the cap has to be far larger than the ~100 tokens
+     * of visible text an alt text actually needs.
+     *
+     * @since 2.6.8
+     * @param string $model
+     * @return bool
+     */
+    public static function is_reasoning_model($model) {
+        return (bool) preg_match('/^(gpt-5|o[1-9])/i', (string) $model);
+    }
+
+    /**
+     * Token-limit and sampling parameters for a chat completion, per model family.
+     *
+     * @since 2.6.8
+     * @param string $model
+     * @return array Parameters to merge into the request body.
+     */
+    public static function request_params_for_model($model) {
+        if (self::is_reasoning_model($model)) {
+            /**
+             * Filter the completion budget sent to an OpenAI reasoning model.
+             *
+             * This covers reasoning tokens as well as visible output, which is
+             * why it is not the ~100 tokens an alt text occupies. Unused budget
+             * is not billed, so err high rather than truncating the answer.
+             *
+             * @since 2.6.8
+             * @param int    $tokens
+             * @param string $model
+             */
+            $tokens = apply_filters('aatg_openai_max_completion_tokens', 2000, $model);
+
+            /**
+             * Filter the reasoning effort for OpenAI reasoning models.
+             *
+             * 'low' is the value every GPT-5 generation accepts; describing an
+             * image needs no deliberation, and lower effort means fewer billed
+             * reasoning tokens. Set to null to omit the parameter entirely.
+             *
+             * @since 2.6.8
+             * @param string|null $effort
+             * @param string      $model
+             */
+            $effort = apply_filters('aatg_openai_reasoning_effort', 'low', $model);
+
+            $params = array('max_completion_tokens' => (int) $tokens);
+            if (!empty($effort)) {
+                $params['reasoning_effort'] = $effort;
+            }
+
+            return $params;
+        }
+
+        return array(
+            'max_tokens'  => 100,
+            'temperature' => 0.6,
+        );
+    }
+
+    /**
+     * POST a chat completion, retrying without any parameter the API rejects.
+     *
+     * request_params_for_model() already sends the right shape for the model
+     * families we know about. The retry is for the ones we don't: a future
+     * model that drops `temperature` or renames another field degrades to a
+     * working request instead of failing the whole run. Bounded at two retries
+     * and limited to optional parameters, so it can never loop or strip the
+     * messages out from under the request.
+     *
+     * @since 2.6.8
+     * @param array  $params
+     * @param string $api_key
+     * @return array handle_response() result
+     */
+    protected function request_completion($params, $api_key) {
+        $headers = array(
+            'Authorization' => 'Bearer ' . $api_key,
+            'Content-Type' => 'application/json',
+        );
+
+        $result = array();
+
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $response = $this->make_request(
+                'https://api.openai.com/v1/chat/completions',
+                $headers,
+                wp_json_encode($params)
+            );
+
+            $result = $this->handle_response($response, 'OpenAI');
+
+            if ($result['success']) {
+                return $result;
+            }
+
+            $retry = $this->drop_rejected_param($params, $result);
+            if (null === $retry) {
+                return $result;
+            }
+
+            $params = $retry;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Rewrite a request body to drop the parameter OpenAI just rejected.
+     *
+     * Returns null when there is nothing safe to retry, which is the common
+     * case — an auth failure or a bad image must surface as-is.
+     *
+     * @since 2.6.8
+     * @param array $params
+     * @param array $result handle_response() result for the failed attempt
+     * @return array|null
+     */
+    protected function drop_rejected_param($params, $result) {
+        if (400 !== (int) (isset($result['response_code']) ? $result['response_code'] : 0)) {
+            return null;
+        }
+
+        $error   = isset($result['data']['error']) && is_array($result['data']['error']) ? $result['data']['error'] : array();
+        $param   = isset($error['param']) ? (string) $error['param'] : '';
+        $code    = isset($error['code']) ? (string) $error['code'] : '';
+        $message = isset($error['message']) ? (string) $error['message'] : '';
+
+        $optional = array('max_tokens', 'max_completion_tokens', 'temperature', 'reasoning_effort');
+
+        if ('' === $param || !isset($params[$param]) || !in_array($param, $optional, true)) {
+            return null;
+        }
+
+        $unsupported = in_array($code, array('unsupported_parameter', 'unsupported_value'), true)
+            || preg_match('/unsupported (parameter|value)/i', $message);
+
+        if (!$unsupported) {
+            return null;
+        }
+
+        $dropped = $params[$param];
+        unset($params[$param]);
+
+        // A rename, not a removal: keep the budget under the name it asked for.
+        if (preg_match('/\buse \'?(max_completion_tokens|max_tokens)\'?/i', $message, $m)
+            && !isset($params[$m[1]])) {
+            $params[$m[1]] = $dropped;
+        }
+
+        return $params;
+    }
+
+    /**
+     * Explain a completion that came back with no text.
+     *
+     * Reasoning models can spend the entire budget on reasoning tokens and
+     * return an empty message with finish_reason "length" — a 200 response
+     * that "Invalid response from OpenAI API" describes badly.
+     *
+     * @since 2.6.8
+     * @param array  $data Decoded response body
+     * @param string $model
+     * @return string
+     */
+    protected function empty_completion_message($data, $model) {
+        $finish = isset($data['choices'][0]['finish_reason']) ? $data['choices'][0]['finish_reason'] : '';
+
+        if ('length' === $finish && self::is_reasoning_model($model)) {
+            return sprintf(
+                'The model %s used its whole token budget before writing any alt text. Raise it with the aatg_openai_max_completion_tokens filter, or choose a non-reasoning model such as gpt-4o.',
+                $model
+            );
+        }
+
+        if ('content_filter' === $finish) {
+            return 'OpenAI declined to describe this image.';
+        }
+
+        return 'Invalid response from OpenAI API';
     }
     
     /**
