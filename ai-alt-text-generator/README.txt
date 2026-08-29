@@ -2,9 +2,9 @@
 Contributors: migkapa
 Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
-Tested up to: 6.9
+Tested up to: 7.1
 Requires PHP: 7.0
-Stable tag: 2.6.8
+Stable tag: 2.7.0
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -111,6 +111,9 @@ The plugin sends images to the AI service — the managed credits service by def
 = Can I generate alt text for multiple images at once? =
 Yes, the AI Alt Text Generator supports bulk processing of images for efficient workflow, and can also generate automatically on upload.
 
+= How do I stop it overwriting alt text I wrote myself? =
+Under Bulk Generation, "Never overwrite alt text containing" takes a comma-separated list of words — "logo, sponsor, headshot", for example. Any image whose current alt text contains one of them is left exactly as it is, even with "Process All Images" turned on, and costs nothing to keep. Press Save (or Start, which saves first), then use the Testing tab to select an image and confirm it says "Protected" before you run.
+
 = Can I use a custom prompt? =
 Yes, you can customize the prompt used to generate alt text in the plugin settings. You can also test your prompts before applying them to images.
 
@@ -130,6 +133,16 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.7.0 =
+- **Fixed: the "never overwrite alt text containing" list did nothing.** The field added in 2.6.0 sits on the Bulk Generation screen, and that screen had no Save control at all — so the words you typed never reached the server, and a bulk run replaced the alt text they were meant to protect. The screen now has its own Save button and a clear "unsaved changes" marker, and pressing Start saves any pending change before the run begins. Reported on the support forum by a user who lost hand-written alt text to it; sorry, and thank you for pushing on it.
+- **Improved: protected images no longer cost a credit.** The keep-words check now runs *before* the image is sent to the AI, instead of throwing the answer away afterwards. Keeping your own alt text is free and bulk runs finish faster. When a run ends, it tells you how many images kept their existing text.
+- **New: check an image before you run.** The Testing tab now shows an image's current alt text and says plainly whether a bulk run would keep it or replace it — no generation, no credit spent.
+- **Fixed: "Bulk generation completed!" could appear while a run was still going.** The two-second progress poll raced the start of the run and could read "0 of 0 images" as a finished one.
+- **Fixed: the Testing tab was unusable on managed credits.** It asked for an API key that managed-credit sites (the default) don't have, leaving "Generate Alt Text" disabled with a misleading message.
+- **Fixed: keep-words now match accented capitals**, so a list containing "Löwe" also protects "LÖWE im Zoo".
+- **Fixed: a failed settings save no longer blanks the settings screen.**
+- Tested up to WordPress 7.1.
 
 = 2.6.8 =
 - **Fixed: "Unsupported parameter: 'max_tokens' is not supported with this model" when using GPT-5.** GPT-5 (and OpenAI's o-series) require `max_completion_tokens` instead of `max_tokens` and reject a custom temperature, so every generation failed for anyone who picked a GPT-5 model from the dropdown. The plugin now sends the request shape each model family expects, in the Media Library, bulk runs, WP-CLI, and the block editor button alike.
@@ -298,6 +311,9 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 - Initial release
 
 == Upgrade Notice ==
+
+= 2.7.0 =
+The "never overwrite alt text containing" list added in 2.6.0 never saved, so bulk runs overwrote the alt text it was supposed to protect. Fixed — update before your next bulk run.
 
 = 2.6.8 =
 Fixes generation failing with "Unsupported parameter: 'max_tokens'" on GPT-5 models. Update if you selected GPT-5, GPT-5 Mini, or an o-series model.

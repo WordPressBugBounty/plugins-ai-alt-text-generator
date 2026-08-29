@@ -345,6 +345,16 @@ class AATG_Text_Generator_CLI extends WP_CLI_Command {
 				continue;
 			}
 
+			// The user asked for this one's alt text to be kept as it is.
+			// Skipping before the request keeps the credit as well.
+			if ( aatg_is_alt_text_protected( $id ) ) {
+				/* translators: %d: attachment ID. */
+				WP_CLI::log( sprintf( __( 'Attachment %d: existing alt text matches a keep-word, leaving it alone.', 'ai-alt-text-generator' ), $id ) );
+				$skipped++;
+				$progress->tick();
+				continue;
+			}
+
 			$contents = file_get_contents( $path );
 			if ( false === $contents ) {
 				WP_CLI::warning( sprintf( __( 'Attachment %d: unable to read file, skipping.', 'ai-alt-text-generator' ), $id ) );

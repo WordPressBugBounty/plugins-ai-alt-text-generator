@@ -687,6 +687,13 @@ class AATG_Text_Generator_Admin {
     }
 
     public function generate_alt_text_for_image_function( $post_id ) {
+        // Keep-worded alt text is left alone. Checked before generating so a
+        // protected image costs no credit and no provider round-trip; the
+        // aatg_alt_text filter would only have thrown the answer away.
+        if ( aatg_is_alt_text_protected( $post_id ) ) {
+            return;
+        }
+
         // Get the smaller image URL (e.g., thumbnail)
         $image_url = $this->get_image_url_by_size($post_id, 'thumbnail');
 

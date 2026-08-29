@@ -104,22 +104,25 @@ if ( ! function_exists( 'aatg_get_coverage_stats' ) ) :
 endif;
 
 /**
- * Persist a generated alt text value for an attachment, applying add-on hooks.
+ * Lower-case a string, keeping accented letters intact.
  *
- * Centralises the "filter then save then notify" sequence so every generation
- * path (single image, bulk, on-upload, REST, CLI) exposes the same extension
- * points to add-ons:
+ * strtolower() is byte-based, so it leaves the capital letters in accented
+ * words alone and a German site listing "Praesenz" spelled with an umlaut
+ * would not match its own alt text.
  *
- *  - filter `aatg_alt_text`     : adjust the alt text per attachment before saving.
- *  - action `aatg_after_generate`: react after the alt text is saved (SEO sync, logging…).
+ * @since 2.7.0
  *
- * @since 2.3.0
- *
- * @param int    $attachment_id Attachment ID.
- * @param string $alt_text      Generated alt text.
- * @param array  $context       Request context (e.g. 'source').
- * @return string The alt text that was saved (possibly filtered); empty string if nothing saved.
+ * @param string $text Text to lower-case.
+ * @return string
  */
+if ( ! function_exists( 'aatg_strtolower' ) ) :
+	function aatg_strtolower( $text ) {
+		$text = (string) $text;
+
+		return function_exists( 'mb_strtolower' ) ? mb_strtolower( $text, 'UTF-8' ) : strtolower( $text );
+	}
+endif;
+
 /**
  * Split the "protected words" setting into a clean list of search terms.
  *
@@ -132,13 +135,50 @@ if ( ! function_exists( 'aatg_protected_alt_words' ) ) :
 	function aatg_protected_alt_words( $raw ) {
 		$words = array_map( 'trim', explode( ',', (string) $raw ) );
 		$words = array_filter(
-			array_map( 'strtolower', $words ),
+			array_map( 'aatg_strtolower', $words ),
 			static function ( $w ) {
 				return '' !== $w;
 			}
 		);
 
 		return array_values( array_unique( $words ) );
+	}
+endif;
+
+/**
+ * Is this attachment's existing alt text protected from being overwritten?
+ *
+ * True when the user listed keep-words under Bulk Generation and the alt text
+ * already on the image contains one of them. Every generation path checks this
+ * BEFORE calling a provider, so a protected image costs nothing to keep.
+ *
+ * @since 2.7.0
+ *
+ * @param int $attachment_id Attachment ID.
+ * @return bool
+ */
+if ( ! function_exists( 'aatg_is_alt_text_protected' ) ) :
+	function aatg_is_alt_text_protected( $attachment_id ) {
+		$opts  = aatg_text_generator_get_options();
+		$words = aatg_protected_alt_words( isset( $opts['protected_alt_words'] ) ? $opts['protected_alt_words'] : '' );
+
+		if ( empty( $words ) ) {
+			return false;
+		}
+
+		$existing = (string) get_post_meta( $attachment_id, '_wp_attachment_image_alt', true );
+		if ( '' === trim( $existing ) ) {
+			return false; // Nothing to protect.
+		}
+
+		$haystack = aatg_strtolower( $existing );
+		foreach ( $words as $word ) {
+			if ( false !== strpos( $haystack, $word ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 endif;
 
@@ -165,30 +205,28 @@ endif;
  */
 if ( ! function_exists( 'aatg_protect_existing_alt_text' ) ) :
 	function aatg_protect_existing_alt_text( $alt_text, $attachment_id ) {
-		$opts  = aatg_text_generator_get_options();
-		$words = aatg_protected_alt_words( isset( $opts['protected_alt_words'] ) ? $opts['protected_alt_words'] : '' );
-
-		if ( empty( $words ) ) {
-			return $alt_text;
-		}
-
-		$existing = (string) get_post_meta( $attachment_id, '_wp_attachment_image_alt', true );
-		if ( '' === trim( $existing ) ) {
-			return $alt_text; // Nothing to protect.
-		}
-
-		$haystack = strtolower( $existing );
-		foreach ( $words as $word ) {
-			if ( false !== strpos( $haystack, $word ) ) {
-				return '';
-			}
-		}
-
-		return $alt_text;
+		return aatg_is_alt_text_protected( $attachment_id ) ? '' : $alt_text;
 	}
 endif;
 add_filter( 'aatg_alt_text', 'aatg_protect_existing_alt_text', 5, 2 );
 
+/**
+ * Persist a generated alt text value for an attachment, applying add-on hooks.
+ *
+ * Centralises the "filter then save then notify" sequence so every generation
+ * path (single image, bulk, on-upload, REST, CLI) exposes the same extension
+ * points to add-ons:
+ *
+ *  - filter `aatg_alt_text`     : adjust the alt text per attachment before saving.
+ *  - action `aatg_after_generate`: react after the alt text is saved (SEO sync, logging…).
+ *
+ * @since 2.3.0
+ *
+ * @param int    $attachment_id Attachment ID.
+ * @param string $alt_text      Generated alt text.
+ * @param array  $context       Request context (e.g. 'source').
+ * @return string The alt text that was saved (possibly filtered); empty string if nothing saved.
+ */
 if ( ! function_exists( 'aatg_save_generated_alt_text' ) ) :
 	function aatg_save_generated_alt_text( $attachment_id, $alt_text, $context = array() ) {
 		$context = array_merge( array( 'attachment_id' => $attachment_id ), $context );

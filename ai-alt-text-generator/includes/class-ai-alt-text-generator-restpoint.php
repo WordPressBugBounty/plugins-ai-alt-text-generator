@@ -364,7 +364,37 @@ class AATG_Text_Generator_Restpoint {
             }
 
             $item = $media_items[0];
-            
+
+            // The user asked for this image's alt text to be left alone (its
+            // current text contains one of their keep-words). Check BEFORE
+            // calling a provider: generating and then discarding the answer
+            // burned a credit per protected image and slowed the run down.
+            if (aatg_is_alt_text_protected($item->ID)) {
+                $current++;
+                update_option('aatg_processing_current', $current);
+
+                // The "images without alt text" queue shrinks as images are
+                // filled in, so it is paged by the skipped count rather than by
+                // progress. A protected image stays in any such queue, so it has
+                // to count as skipped or the next call would hand back the very
+                // same image forever.
+                if (!$this->rewrite_all && !($bulk_ids && is_array($bulk_ids))) {
+                    update_option('aatg_processing_skipped', get_option('aatg_processing_skipped', 0) + 1);
+                }
+
+                if ($current >= $total) {
+                    delete_transient('aatg_bulk_generation_ids');
+                }
+
+                return new WP_REST_Response(array(
+                    'status'        => 'protected',
+                    'message'       => 'Existing alt text kept (matches a keep-word)',
+                    'current'       => $current,
+                    'total'         => $total,
+                    'is_processing' => true
+                ), 200);
+            }
+
             // Get provider and API key from options
             $options = get_option('aatg_text_generator_options', array());
             $provider = $options['ai_provider'] ?: 'openai';
@@ -834,10 +864,13 @@ class AATG_Text_Generator_Restpoint {
             $current_item = 0;
         }
 
-        // If not processing, ensure counters are reset
+        // If not processing, report zero without writing. This endpoint is
+        // polled every two seconds, so writing here raced the Start request:
+        // a poll that read "not processing" a moment before the run began then
+        // zeroed the counters it had just written, leaving is_processing = true
+        // with 0 of 0 images — which the UI read as "completed" while the run
+        // was still going. Reads only now; finish_processing() does the reset.
         if (!$is_processing) {
-            update_option('aatg_processing_total', 0);
-            update_option('aatg_processing_current', 0);
             $total_items = 0;
             $current_item = 0;
         }
