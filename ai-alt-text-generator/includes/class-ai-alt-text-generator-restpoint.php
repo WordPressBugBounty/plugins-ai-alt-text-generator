@@ -791,11 +791,19 @@ class AATG_Text_Generator_Restpoint {
         // Remove read-only / server-managed fields the frontend echoes back.
         unset($settings['available_providers'], $settings['default_models'], $settings['managed_connected']);
 
-        // Preserve the managed-credit token: it's set via /managed/connect and is
-        // never sent by the settings UI, so don't let a normal save wipe it.
+        // The managed-credit connection is owned by /managed/connect and
+        // /managed/disconnect, never by a settings save. Always keep the stored
+        // values: a page that stayed open across a Connect still holds the old
+        // token, and writing it back breaks every generation with "not_found".
         $existing = get_option('aatg_text_generator_options', array());
-        if (empty($settings['managed_token']) && !empty($existing['managed_token'])) {
-            $settings['managed_token'] = $existing['managed_token'];
+        if (!is_array($existing)) {
+            $existing = array();
+        }
+        foreach (array('managed_token', 'managed_ref', 'managed_optout', 'managed_awaiting_token') as $field) {
+            unset($settings[$field]);
+            if (array_key_exists($field, $existing)) {
+                $settings[$field] = $existing[$field];
+            }
         }
 
         // Ensure we have all required fields
@@ -822,14 +830,20 @@ class AATG_Text_Generator_Restpoint {
         $saved = get_option('aatg_text_generator_options');
         
         if (!$result || !$saved) {
+            unset($settings['managed_token']);
             return new WP_REST_Response(array(
                 'error' => 'Failed to save settings',
                 'settings' => $settings
             ), 500);
         }
-        
+
         // Re-add provider options for frontend (since it's read-only)
         $saved['available_providers'] = AATG_Provider_Factory::get_provider_options();
+
+        // Same shape as GET /settings: the token stays on the server, the UI
+        // gets a connected flag.
+        $saved['managed_connected'] = !empty($saved['managed_token']);
+        unset($saved['managed_token']);
         
         return new WP_REST_Response($saved, 200);
     }

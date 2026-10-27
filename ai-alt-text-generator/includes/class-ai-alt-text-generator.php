@@ -173,7 +173,6 @@ class AATG_Text_Generator {
         $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_media_admin_scripts' );
         $this->loader->add_action( 'admin_head', $plugin_admin, 'add_admin_css' );
         $this->loader->add_action( 'wp_ajax_generate_alt_text', $plugin_admin, 'generate_alt_text_ajax' );
-		$this->loader->add_action('wp_ajax_nopriv_generate_alt_text', $plugin_admin, 'generate_alt_text_ajax');
 		$this->loader->add_action('generate_alt_text_for_image', $plugin_admin, 'generate_alt_text_for_image_function');
 
 		if (isset(get_option('aatg_text_generator_options')['on_upload_alt_text']) && get_option('aatg_text_generator_options')['on_upload_alt_text']) {

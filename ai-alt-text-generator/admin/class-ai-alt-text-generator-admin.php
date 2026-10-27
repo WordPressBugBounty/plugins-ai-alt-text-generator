@@ -590,14 +590,26 @@ class AATG_Text_Generator_Admin {
                 return;
             }
 
+            if (!current_user_can('upload_files')) {
+                wp_send_json_error('You do not have permission to generate alt text.', 403);
+                return;
+            }
+
             $attachment_id = null;
 
             if (!empty($_POST['post_id'])) {
                 $attachment_id = absint($_POST['post_id']);
             }
 
-            if (!$attachment_id) {
+            if (!$attachment_id || 'attachment' !== get_post_type($attachment_id)) {
                 wp_send_json_error('Could not find a valid image ID in the request.');
+                return;
+            }
+
+            // The nonce is handed to every user who can open the editor, so it
+            // proves nothing about which images they may change.
+            if (!current_user_can('edit_post', $attachment_id)) {
+                wp_send_json_error('You do not have permission to edit this image.', 403);
                 return;
             }
 
@@ -629,6 +641,13 @@ class AATG_Text_Generator_Admin {
 
     public function handle_bulk_action($redirect_to, $doaction, $post_ids) {
         if ($doaction === 'generate_alt_text') {
+
+            // Only touch images the current user is allowed to edit.
+            if (is_array($post_ids)) {
+                $post_ids = array_filter($post_ids, function ($id) {
+                    return current_user_can('edit_post', (int) $id);
+                });
+            }
 
             if (empty($post_ids) || !is_array($post_ids)) {
                 return add_query_arg('aatg_error', 'no_images_selected', $redirect_to);
@@ -1069,29 +1088,16 @@ class AATG_Text_Generator_Admin {
      * Register the AJAX handlers
      */
     public function register_ajax_handlers() {
-        add_action('wp_ajax_generate_alt_text', array($this, 'generate_alt_text_ajax_handler'));
-        add_action('wp_ajax_nopriv_generate_alt_text', array($this, 'generate_alt_text_ajax_handler'));
+        // generate_alt_text is registered once, in define_admin_hooks().
         add_action('wp_ajax_aatg_processing_status', array($this, 'get_processing_status_ajax'));
         add_action('wp_ajax_aatg_process_next_batch', array($this, 'process_next_batch_ajax'));
     }
 
-    /**
-     * Handle the generate alt text AJAX request
-     */
-    public function generate_alt_text_ajax_handler() {
-        // Get the main plugin instance
-        global $ai_alt_text_generator;
-        
-        if (method_exists($ai_alt_text_generator, 'generate_alt_text_ajax')) {
-            $ai_alt_text_generator->generate_alt_text_ajax();
-        } else {
-            wp_send_json_error('Method not found');
-        }
-        
-        wp_die();
-    }
-
     public function get_processing_status_ajax() {
+        if (!current_user_can('upload_files')) {
+            wp_send_json_error('Permission denied', 403);
+        }
+
         $status = [
             'is_processing' => get_option('aatg_is_processing', false),
             'total_items' => get_option('aatg_processing_total', 0),
@@ -1101,6 +1107,10 @@ class AATG_Text_Generator_Admin {
     }
 
     public function process_next_batch_ajax() {
+        if (!current_user_can('upload_files')) {
+            wp_send_json_error('Permission denied', 403);
+        }
+
         // Manually run the next batch from the REST point logic
         $rest_point = new AATG_Text_Generator_Restpoint();
         $rest_point->process_media_batch(10); // Process a batch of 10

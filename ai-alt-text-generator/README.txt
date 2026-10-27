@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 7.1
 Requires PHP: 7.0
-Stable tag: 2.7.0
+Stable tag: 2.7.2
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -133,6 +133,12 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.7.2 =
+- **Fixed: "Your managed connection is invalid" after reconnecting.** Clicking "Connect free credits" gives your site a new connection key, but a settings page that was already open still remembered the old one, and the next save (including pressing Start on the Bulk Generation tab) wrote the old key back. Every image then failed and the credits looked gone until you reconnected, which started the loop again. Saving settings can no longer change the connection; only Connect and Disconnect do. This also stops a save after Disconnect from quietly reconnecting the site. Your credits were never affected. Thanks to the customer who reported it with screenshots.
+
+= 2.7.1 =
+- **Security: generating alt text for a single image now checks that you are allowed to edit that image.** Before, any logged-in user who could open the editor could regenerate the alt text (and, with mirroring on, the title, caption and description) of images they don't own. The request also no longer answers logged-out visitors. Media Library bulk runs skip images you can't edit, and the bulk progress endpoints now require media permissions. Responsibly disclosed by Wordfence.
 
 = 2.7.0 =
 - **Fixed: the "never overwrite alt text containing" list did nothing.** The field added in 2.6.0 sits on the Bulk Generation screen, and that screen had no Save control at all — so the words you typed never reached the server, and a bulk run replaced the alt text they were meant to protect. The screen now has its own Save button and a clear "unsaved changes" marker, and pressing Start saves any pending change before the run begins. Reported on the support forum by a user who lost hand-written alt text to it; sorry, and thank you for pushing on it.
@@ -311,6 +317,12 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 - Initial release
 
 == Upgrade Notice ==
+
+= 2.7.2 =
+Fixes a loop where bulk generation failed with "Your managed connection is invalid" right after reconnecting managed credits.
+
+= 2.7.1 =
+Security fix: low-privileged users could change the alt text of images they don't own. Update now.
 
 = 2.7.0 =
 The "never overwrite alt text containing" list added in 2.6.0 never saved, so bulk runs overwrote the alt text it was supposed to protect. Fixed — update before your next bulk run.
