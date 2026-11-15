@@ -4,7 +4,7 @@ Tags: alt text, accessibility, image alt text, wcag, image seo
 Requires at least: 4.6
 Tested up to: 7.1
 Requires PHP: 7.0
-Stable tag: 2.7.2
+Stable tag: 2.7.3
 License: GPL-2.0+
 License URI: http://www.gnu.org/licenses/gpl-2.0.txt
 
@@ -109,10 +109,10 @@ Yes. AI Alt Text Generator Pro is an optional add-on that adds WooCommerce produ
 The plugin sends images to the AI service — the managed credits service by default, or your selected provider's API if you've added your own key — which returns the generated alt text. This process requires an active internet connection and the transmission of image data to the service's servers.
 
 = Can I generate alt text for multiple images at once? =
-Yes, the AI Alt Text Generator supports bulk processing of images for efficient workflow, and can also generate automatically on upload.
+Yes, two ways. The Bulk Generation tab works through every image that has no alt text, oldest first; keep the tab open while it runs. To pick the images yourself, open Media > Library, switch to list view, tick the images you want, choose "Generate Alt Text" from the Bulk actions menu and press Apply. Only the images you ticked are touched, which is the easiest way to leave decorative images (the ones that should keep an empty alt) alone. The plugin can also generate alt text automatically on upload.
 
 = How do I stop it overwriting alt text I wrote myself? =
-Under Bulk Generation, "Never overwrite alt text containing" takes a comma-separated list of words — "logo, sponsor, headshot", for example. Any image whose current alt text contains one of them is left exactly as it is, even with "Process All Images" turned on, and costs nothing to keep. Press Save (or Start, which saves first), then use the Testing tab to select an image and confirm it says "Protected" before you run.
+By default it doesn't: bulk generation only fills in images that have no alt text. Existing alt text is replaced only when you turn on "Process All Images" under Bulk Generation. Once that is on, a field called "Never overwrite alt text containing" appears below it. It takes a comma-separated list of words — "logo, sponsor, headshot", for example. Any image whose current alt text contains one of them is left exactly as it is and costs nothing to keep. Press Save (or Start, which saves first), then use the Testing tab to select an image and confirm it says "Protected" before you run.
 
 = Can I use a custom prompt? =
 Yes, you can customize the prompt used to generate alt text in the plugin settings. You can also test your prompts before applying them to images.
@@ -133,6 +133,17 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_2.png
 https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 
 == Changelog ==
+
+= 2.7.3 =
+- **Fixed: sites still stuck on an old connection key after 2.7.2 now repair themselves.** 2.7.2 stopped the old key from being saved again, but a site that already had it kept looking connected while every image failed, and Refresh only said "Could not refresh status." Now, when our server doesn't recognise the key, the plugin reconnects the site straight away and carries on: free plans keep their account and credits, and paid plans are asked to paste their API token from the dashboard. Opening the General tab is enough to trigger it.
+- **Fixed: error messages on the General tab now say what actually went wrong** instead of a generic "Could not refresh status."
+- **Fixed: a paused bulk run no longer looks frozen.** Bulk generation runs while the Bulk Generation tab is open. If you left the page, the "Processed 3 of 1567 images" notice stayed on every admin screen with no way to stop it. The notice now says the run is paused, links back to resume it, and has a Stop button. The Bulk Generation tab offers Resume and Stop for a paused run.
+- **Fixed: opening the Bulk Generation tab during a stuck run could say "Bulk generation completed!"** The progress numbers were compared as text, so 3 of 1567 counted as finished.
+- **Fixed: the "Generate Alt Text" button on a single image now says why it failed**, for example that the month's free images are used up, instead of "The AI provider failed to generate alt text."
+- **Improved: you can see when your credits refill.** Free credits refill 30 days after your account started, not on the 1st of the month. The General tab now shows the date next to your balance, and the out-of-credits messages say when they come back.
+- **Improved: the Bulk Generation tab says that images are processed oldest first**, so you know where to look for the results. Thanks to Steven for the suggestion.
+- **Docs: the FAQ now explains the Media Library "Generate Alt Text" bulk action** (for doing only the images you pick), and that the "Never overwrite alt text containing" field appears once "Process All Images" is turned on.
+- **Improved: images the AI can't read are tried once, not three times on every run.** Corrupt, very small or unsupported images are now left out of later "missing alt text" runs, and the run tells you how many there are. Save them again as JPEG or PNG (or replace the file) and they are included again. Failed images were never charged, but the repeat attempts slowed big libraries down a lot.
 
 = 2.7.2 =
 - **Fixed: "Your managed connection is invalid" after reconnecting.** Clicking "Connect free credits" gives your site a new connection key, but a settings page that was already open still remembered the old one, and the next save (including pressing Start on the Bulk Generation tab) wrote the old key back. Every image then failed and the credits looked gone until you reconnected, which started the loop again. Saving settings can no longer change the connection; only Connect and Disconnect do. This also stops a save after Disconnect from quietly reconnecting the site. Your credits were never affected. Thanks to the customer who reported it with screenshots.
@@ -317,6 +328,9 @@ https://lajmeshkurt.com/wp-content/uploads/2024/01/screenshot_3.png
 - Initial release
 
 == Upgrade Notice ==
+
+= 2.7.3 =
+Repairs sites still stuck with "Could not refresh status" or "managed connection is invalid", explains paused bulk runs, and stops retrying images that can't be read.
 
 = 2.7.2 =
 Fixes a loop where bulk generation failed with "Your managed connection is invalid" right after reconnecting managed credits.

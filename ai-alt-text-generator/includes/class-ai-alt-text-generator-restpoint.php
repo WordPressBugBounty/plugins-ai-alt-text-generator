@@ -203,9 +203,38 @@ class AATG_Text_Generator_Restpoint {
             return new WP_REST_Response(array('ok' => false, 'error' => 'not_connected'), 400);
         }
         $res = aatg_managed_status($options['managed_token']);
+
+        // The store doesn't know this key (404 "Unknown token"). Up to 2.7.2
+        // this came back as an error the page couldn't read, so the user saw
+        // "Could not refresh status." on a site that looked connected. Get a
+        // working key instead; if this site's plan needs its token pasted,
+        // say so and show Connect.
+        $reconnected = false;
+        if (is_wp_error($res) && 404 === (int) ($res->get_error_data()['status'] ?? 0)) {
+            if (aatg_managed_recover_connection()) {
+                $options     = aatg_text_generator_get_options();
+                $res         = aatg_managed_status($options['managed_token']);
+                $reconnected = !is_wp_error($res);
+            } else {
+                $options = aatg_text_generator_get_options();
+                $paid    = !empty($options['managed_awaiting_token']);
+                // Business outcome: 200 so the admin JS reads the fields.
+                return new WP_REST_Response(array(
+                    'ok'                => false,
+                    'error'             => $paid ? 'paid_account_exists' : 'not_connected',
+                    'message'           => $paid
+                        ? aatg_managed_error_message('paid_account_exists')
+                        : __('This site\'s connection key is no longer valid. Click "Connect free credits" to reconnect. Your credits are kept.', 'ai-alt-text-generator'),
+                    'managed_connected' => !empty($options['managed_token']),
+                    'dashboard_url'     => $paid ? aatg_store_url() . '/login' : '',
+                ), 200);
+            }
+        }
+
         if (is_wp_error($res)) {
             return new WP_REST_Response(array('ok' => false, 'error' => $res->get_error_message()), 502);
         }
+        $res['reconnected'] = $reconnected;
         if (isset($res['credits_remaining']) && (int) $res['credits_remaining'] > 0 && function_exists('aatg_managed_clear_at_limit')) {
             aatg_managed_clear_at_limit();
         }
@@ -222,6 +251,7 @@ class AATG_Text_Generator_Restpoint {
         // Remember the choice so auto-connect doesn't immediately reconnect.
         $options['managed_optout'] = true;
         update_option('aatg_text_generator_options', $options);
+        delete_option('aatg_managed_period_end');
         return new WP_REST_Response(array('ok' => true), 200);
     }
 
@@ -246,20 +276,39 @@ class AATG_Text_Generator_Restpoint {
                 'fields'         => 'ids'
             );
 
-            // If not processing all images, only get those without alt text
+            // If not processing all images, only get those without alt text.
+            // An empty list means there is nothing to do; leaving post__in
+            // unset here used to count the whole library instead.
+            $unreadable = 0;
             if (!$this->rewrite_all) {
                 $ids = $this->get_images_without_alt_text_ids();
-                if (!empty($ids)) {
+                $unreadable = $this->count_unreadable_without_alt_text();
+                if (empty($ids)) {
+                    $total_images = 0;
+                } else {
                     $args['post__in'] = $ids;
+                    $total_images = count(get_posts($args));
                 }
+            } else {
+                $total_images = count(get_posts($args));
             }
-
-            $total_images = count(get_posts($args));
 
             if ($total_images === 0) {
                 return new WP_REST_Response(array(
                     'status' => 'error',
-                    'message' => 'No images found to process'
+                    'message' => $unreadable > 0
+                        ? sprintf(
+                            /* translators: %d: number of images skipped because they could not be read before. */
+                            _n(
+                                'Nothing left to process. %d image without alt text could not be read on an earlier run. Save it again as a JPEG or PNG and it will be included next time.',
+                                'Nothing left to process. %d images without alt text could not be read on an earlier run. Save them again as JPEG or PNG and they will be included next time.',
+                                $unreadable,
+                                'ai-alt-text-generator'
+                            ),
+                            $unreadable
+                        )
+                        : 'No images found to process',
+                    'unreadable_excluded' => $unreadable,
                 ), 200);
             }
 
@@ -269,11 +318,13 @@ class AATG_Text_Generator_Restpoint {
             update_option('aatg_processing_current', 0);
             update_option('aatg_processing_skipped', 0);
             delete_option('aatg_processing_retry');
+            $this->touch_heartbeat();
 
             return new WP_REST_Response(array(
                 'status' => 'success',
                 'message' => sprintf('Found %d images to process', $total_images),
                 'total_items' => $total_images,
+                'unreadable_excluded' => $unreadable,
                 'is_processing' => true
             ), 200);
 
@@ -291,6 +342,8 @@ class AATG_Text_Generator_Restpoint {
     }
 
     public function process_next_image() {
+        // Set when the provider rejected the image itself (see below).
+        $unreadable = false;
         try {
             if (!get_option('aatg_is_processing', false)) {
                 return new WP_REST_Response(array(
@@ -298,6 +351,7 @@ class AATG_Text_Generator_Restpoint {
                     'message' => 'Processing is not active'
                 ), 200);
             }
+            $this->touch_heartbeat();
 
             $current = get_option('aatg_processing_current', 0);
             $total = get_option('aatg_processing_total', 0);
@@ -451,6 +505,17 @@ class AATG_Text_Generator_Restpoint {
                 ), 200);
             }
 
+            // The provider can't read this image (corrupt, tiny, unsupported
+            // format). Asking again gets the same answer, so don't retry, and
+            // leave it out of later "missing alt text" runs. One site spent
+            // 1,385 requests in a day re-asking about ~460 such images.
+            if (!$result['success'] && !empty($result['unreadable'])) {
+                delete_option('aatg_processing_retry');
+                update_post_meta($item->ID, '_aatg_unreadable', time());
+                $unreadable = true;
+                throw new Exception($result['message']);
+            }
+
             if (!$result['success']) {
                 // A provider failure arrives here as a well-formed error result,
                 // so the 2.6.2 retry (which only catches thrown transport
@@ -515,11 +580,17 @@ class AATG_Text_Generator_Restpoint {
 
             // A failed image keeps its empty alt text, so the missing-alt
             // query would hand it back forever; the query offset steps past it.
-            update_option('aatg_processing_skipped', get_option('aatg_processing_skipped', 0) + 1);
+            // An unreadable image has just been marked, which drops it from
+            // that query by itself; stepping past it too would skip the next
+            // image in line.
+            if (!$unreadable) {
+                update_option('aatg_processing_skipped', get_option('aatg_processing_skipped', 0) + 1);
+            }
 
             return new WP_REST_Response(array(
                 'status' => 'error',
                 'message' => $e->getMessage(),
+                'unreadable' => $unreadable,
                 'current' => $current,
                 'total' => $total,
                 'is_processing' => true
@@ -612,6 +683,9 @@ class AATG_Text_Generator_Restpoint {
             if (!get_option('aatg_is_processing', false)) {
                 return;
             }
+            // Per image: a batch of 10 can take minutes, and the run must not
+            // read as paused while cron is working through it.
+            $this->touch_heartbeat();
 
             // `current` is both the progress counter and (for fixed-list runs)
             // the query offset, so it advances for every image taken off the
@@ -685,6 +759,7 @@ class AATG_Text_Generator_Restpoint {
         update_option('aatg_processing_current', 0);
         update_option('aatg_processing_skipped', 0);
         delete_option('aatg_processing_retry');
+        delete_option('aatg_processing_heartbeat');
         delete_transient('aatg_bulk_generation_ids');
 	}
 
@@ -695,9 +770,11 @@ class AATG_Text_Generator_Restpoint {
 			SELECT p.ID
 			FROM {$wpdb->posts} p
 			LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_wp_attachment_image_alt'
+			LEFT JOIN {$wpdb->postmeta} un ON p.ID = un.post_id AND un.meta_key = '_aatg_unreadable'
 			WHERE p.post_type = 'attachment'
 			AND p.post_mime_type LIKE 'image%'
 			AND (pm.meta_value IS NULL OR pm.meta_value = '')
+			AND un.meta_id IS NULL
 			ORDER BY p.ID ASC
 		";
 
@@ -707,6 +784,26 @@ class AATG_Text_Generator_Restpoint {
 		}, $results);
 
 		return $ids;
+	}
+
+	/**
+	 * Images still missing alt text that a past run found unreadable, and so
+	 * left out of get_images_without_alt_text_ids().
+	 *
+	 * @since 2.7.3
+	 */
+	private function count_unreadable_without_alt_text() {
+		global $wpdb;
+
+		return (int) $wpdb->get_var("
+			SELECT COUNT(DISTINCT p.ID)
+			FROM {$wpdb->posts} p
+			INNER JOIN {$wpdb->postmeta} un ON p.ID = un.post_id AND un.meta_key = '_aatg_unreadable'
+			LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_wp_attachment_image_alt'
+			WHERE p.post_type = 'attachment'
+			AND p.post_mime_type LIKE 'image%'
+			AND (pm.meta_value IS NULL OR pm.meta_value = '')
+		");
 	}
 
     /**
@@ -854,9 +951,7 @@ class AATG_Text_Generator_Restpoint {
     }
 
     public function stop_processing() {
-        update_option('aatg_is_processing', false);
-        update_option('aatg_processing_total', 0);
-        update_option('aatg_processing_current', 0);
+        $this->finish_processing();
         return new WP_REST_Response(array(
             'status' => 'success',
             'message' => 'Processing stopped'
@@ -889,11 +984,47 @@ class AATG_Text_Generator_Restpoint {
             $current_item = 0;
         }
 
+        // Options come back from the database as strings. The page compared
+        // "3" >= "1567" as text, which is true, and announced a stuck run as
+        // "Bulk generation completed!".
         return new WP_REST_Response(array(
-            'is_processing' => $is_processing,
-            'total_items' => $total_items,
-            'current_item' => $current_item
+            'is_processing' => (bool) $is_processing,
+            'total_items' => (int) $total_items,
+            'current_item' => (int) $current_item,
+            'paused' => self::is_paused(),
         ), 200);
+    }
+
+    /**
+     * How long a run can go without a request before it counts as paused.
+     * One image can legitimately take a minute (store timeout) plus a 30 s
+     * retry wait, so this is well past that.
+     */
+    const PAUSED_AFTER = 180;
+
+    /**
+     * A run is marked as processing but nothing is driving it.
+     *
+     * Bulk generation is driven by the Bulk Generation tab: each image is one
+     * request from that page. Leave the page and the run stops, but
+     * aatg_is_processing stays set, so the admin notice showed the same
+     * "Processed 3 of 1567" forever with no way to tell it had stopped.
+     * A run with no heartbeat at all started before 2.7.3 and is long dead.
+     *
+     * @since 2.7.3
+     * @return bool
+     */
+    public static function is_paused() {
+        if (!get_option('aatg_is_processing', false)) {
+            return false;
+        }
+        $last = (int) get_option('aatg_processing_heartbeat', 0);
+        return $last <= 0 || (time() - $last) > self::PAUSED_AFTER;
+    }
+
+    /** Record that the current run just did something. */
+    private function touch_heartbeat() {
+        update_option('aatg_processing_heartbeat', time(), false);
     }
 
     public function handle_test_generation(WP_REST_Request $request) {

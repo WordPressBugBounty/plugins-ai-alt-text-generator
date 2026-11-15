@@ -343,6 +343,15 @@ class AATG_Text_Generator_Admin {
                     esc_html__( 'New images have not been getting alt text for %s. Add credits to start generating again — your settings and existing alt text are untouched.', 'ai-alt-text-generator' ),
                     esc_html( $paused_for )
                 );
+                $refill = function_exists( 'aatg_managed_refill_date' ) ? aatg_managed_refill_date() : '';
+                if ( '' !== $refill ) {
+                    echo ' ';
+                    printf(
+                        /* translators: %s: date the plan's credits refill, in the site's date format. */
+                        esc_html__( 'Your plan\'s credits refill on %s.', 'ai-alt-text-generator' ),
+                        esc_html( $refill )
+                    );
+                }
                 ?>
             </p>
             <p>
@@ -509,65 +518,107 @@ class AATG_Text_Generator_Admin {
     }
 
     public function show_bulk_processing_notice() {
-        if (get_option('aatg_is_processing')) {
-            $total = get_option('aatg_processing_total', 0);
-            $current = get_option('aatg_processing_current', 0);
-            $progress = $total > 0 ? round(($current / $total) * 100) : 0;
-            
-            ?>
-            <div class="notice notice-info is-dismissible aatg-progress-notice">
-                <p>
-                    <strong><?php _e('AI Alt Text Generation in Progress', 'ai-alt-text-generator'); ?></strong>
-                </p>
-                <div style="width: 100%; background-color: #e0e0e0; border-radius: 4px; overflow: hidden; margin-bottom: 10px;">
-                    <div style="width: <?php echo $progress; ?>%; background-color: #0073aa; color: white; text-align: center; line-height: 20px;">
-                        <?php echo $progress; ?>%
-                    </div>
-                </div>
-                <p>
-                    <?php printf(__('Processed %d of %d images.', 'ai-alt-text-generator'), $current, $total); ?>
-                    <button id="aatg-manual-trigger" class="button" style="margin-left: 10px;"><?php _e('Process Next Batch', 'ai-alt-text-generator'); ?></button>
-                    <span class="spinner" style="float: none; margin-left: 5px;"></span>
-                </p>
-            </div>
-            <script>
-                jQuery(document).ready(function($) {
-                    var notice = $('.aatg-progress-notice');
-                    var triggerButton = $('#aatg-manual-trigger');
-                    var spinner = notice.find('.spinner');
-
-                    function updateProgress(response) {
-                        if (response.is_processing) {
-                            var progress = response.total_items > 0 ? Math.round((response.current_item / response.total_items) * 100) : 0;
-                            notice.find('.notice-info div > div').css('width', progress + '%').text(progress + '%');
-                            notice.find('p:first-of-type + p').html('Processed ' + response.current_item + ' of ' + response.total_items + ' images. <button id="aatg-manual-trigger" class="button" style="margin-left: 10px;">Process Next Batch</button>');
-                        } else {
-                            notice.removeClass('notice-info').addClass('notice-success').html('<p>Bulk generation complete!</p>');
-                            clearInterval(interval);
-                            setTimeout(function() {
-                                notice.fadeOut();
-                            }, 5000);
-                        }
-                    }
-
-                    var interval = setInterval(function() {
-                        $.get(ajaxurl, { action: 'aatg_processing_status' }, updateProgress);
-                    }, 10000);
-
-                    $(document).on('click', '#aatg-manual-trigger', function() {
-                        spinner.addClass('is-active');
-                        triggerButton.prop('disabled', true);
-                        
-                        $.post(ajaxurl, { action: 'aatg_process_next_batch' }, function(response) {
-                            updateProgress(response);
-                            spinner.removeClass('is-active');
-                            triggerButton.prop('disabled', false);
-                        });
-                    });
-                });
-            </script>
-            <?php
+        if (!get_option('aatg_is_processing')) {
+            return;
         }
+        // Only users who can start or stop a run (the Bulk tab needs this too).
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        $total    = (int) get_option('aatg_processing_total', 0);
+        $current  = (int) get_option('aatg_processing_current', 0);
+        $progress = $total > 0 ? round(($current / $total) * 100) : 0;
+        $paused   = AATG_Text_Generator_Restpoint::is_paused();
+        $bulk_url = admin_url('admin.php?page=' . $this->plugin_name . '#/bulk-generate');
+
+        // The Bulk Generation tab drives the run and shows its own progress.
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if ($screen && false !== strpos((string) $screen->id, $this->plugin_name)) {
+            return;
+        }
+        ?>
+        <div class="notice <?php echo $paused ? 'notice-warning' : 'notice-info'; ?> aatg-progress-notice">
+            <p>
+                <strong class="aatg-progress-title">
+                    <?php echo $paused
+                        ? esc_html__('AI alt text bulk generation is paused', 'ai-alt-text-generator')
+                        : esc_html__('AI Alt Text Generation in Progress', 'ai-alt-text-generator'); ?>
+                </strong>
+            </p>
+            <div style="width: 100%; background-color: #e0e0e0; border-radius: 4px; overflow: hidden; margin-bottom: 10px;">
+                <div class="aatg-progress-bar" style="width: <?php echo esc_attr($progress); ?>%; background-color: #0073aa; height: 10px;"></div>
+            </div>
+            <p class="aatg-progress-text">
+                <?php
+                /* translators: 1: images processed so far, 2: images in the run. */
+                printf(esc_html__('Processed %1$d of %2$d images.', 'ai-alt-text-generator'), $current, $total);
+                ?>
+            </p>
+            <p class="aatg-paused-help"<?php echo $paused ? '' : ' style="display:none"'; ?>>
+                <?php esc_html_e('Bulk generation runs while the Bulk Generation tab is open, and stops when you leave it. Your progress is saved.', 'ai-alt-text-generator'); ?>
+            </p>
+            <p>
+                <a class="button button-primary" href="<?php echo esc_url($bulk_url); ?>">
+                    <?php echo $paused
+                        ? esc_html__('Resume on the Bulk Generation tab', 'ai-alt-text-generator')
+                        : esc_html__('Open the Bulk Generation tab', 'ai-alt-text-generator'); ?>
+                </a>
+                <button type="button" class="button aatg-stop-run" style="margin-left: 6px;"><?php esc_html_e('Stop', 'ai-alt-text-generator'); ?></button>
+                <span class="spinner" style="float: none; margin-left: 5px;"></span>
+            </p>
+        </div>
+        <script>
+            jQuery(function($) {
+                var notice = $('.aatg-progress-notice');
+                var nonce = <?php echo wp_json_encode(wp_create_nonce('aatg_bulk_notice')); ?>;
+                var i18n = <?php echo wp_json_encode(array(
+                    'processed' => __('Processed %1$d of %2$d images.', 'ai-alt-text-generator'),
+                    'paused'    => __('AI alt text bulk generation is paused', 'ai-alt-text-generator'),
+                    'stopped'   => __('Bulk generation stopped. Images that already have alt text keep it.', 'ai-alt-text-generator'),
+                    'done'      => __('Bulk generation complete!', 'ai-alt-text-generator'),
+                )); ?>;
+
+                function update(response) {
+                    if (!response || !response.is_processing) {
+                        clearInterval(interval);
+                        notice.removeClass('notice-info notice-warning').addClass('notice-success')
+                            .html($('<p>').text(i18n.done));
+                        return;
+                    }
+                    var pct = response.total_items > 0 ? Math.round((response.current_item / response.total_items) * 100) : 0;
+                    notice.find('.aatg-progress-bar').css('width', pct + '%');
+                    notice.find('.aatg-progress-text').text(
+                        i18n.processed.replace('%1$d', response.current_item).replace('%2$d', response.total_items)
+                    );
+                    if (response.paused) {
+                        notice.removeClass('notice-info').addClass('notice-warning');
+                        notice.find('.aatg-progress-title').text(i18n.paused);
+                        notice.find('.aatg-paused-help').show();
+                    }
+                }
+
+                var interval = setInterval(function() {
+                    $.get(ajaxurl, { action: 'aatg_processing_status' }, update);
+                }, 10000);
+
+                notice.on('click', '.aatg-stop-run', function() {
+                    var button = $(this).prop('disabled', true);
+                    notice.find('.spinner').addClass('is-active');
+                    $.post(ajaxurl, { action: 'aatg_stop_processing', _ajax_nonce: nonce })
+                        .done(function() {
+                            clearInterval(interval);
+                            notice.removeClass('notice-info notice-warning').addClass('notice-success')
+                                .html($('<p>').text(i18n.stopped));
+                        })
+                        .fail(function() {
+                            button.prop('disabled', false);
+                            notice.find('.spinner').removeClass('is-active');
+                        });
+                });
+            });
+        </script>
+        <?php
     }
 
     public function add_admin_css() {
@@ -621,10 +672,22 @@ class AATG_Text_Generator_Admin {
                 return;
             }
 
+            // generate_alt_text_with_ai() flattens every failure to '', so the
+            // reason comes from what the managed client records. Clear it first
+            // so an older failure can't be reported for this one.
+            delete_transient('aatg_managed_last_error');
+
             // Generate alt text using AI provider
             $alt_text = $this->generate_alt_text_with_ai($image_url, array('attachment_id' => $attachment_id, 'source' => 'single'));
             if (empty($alt_text)) {
-                wp_send_json_error('The AI provider failed to generate alt text.');
+                // Out of credits used to read "The AI provider failed to
+                // generate alt text.", which gives the user nothing to act on.
+                $last = get_transient('aatg_managed_last_error');
+                wp_send_json_error(
+                    $last && function_exists('aatg_managed_error_message')
+                        ? aatg_managed_error_message($last)
+                        : __('The AI provider failed to generate alt text.', 'ai-alt-text-generator')
+                );
                 return;
             }
 
@@ -677,6 +740,7 @@ class AATG_Text_Generator_Admin {
                 update_option('aatg_processing_total', $total);
                 update_option('aatg_processing_current', 1);
                 update_option('aatg_processing_skipped', 0);
+                update_option('aatg_processing_heartbeat', time(), false);
                 wp_schedule_single_event(time() + 5, 'ai_process_media_batch', array(10));
             } else {
                 // Single image: already done inline, nothing to schedule.
@@ -1091,6 +1155,7 @@ class AATG_Text_Generator_Admin {
         // generate_alt_text is registered once, in define_admin_hooks().
         add_action('wp_ajax_aatg_processing_status', array($this, 'get_processing_status_ajax'));
         add_action('wp_ajax_aatg_process_next_batch', array($this, 'process_next_batch_ajax'));
+        add_action('wp_ajax_aatg_stop_processing', array($this, 'stop_processing_ajax'));
     }
 
     public function get_processing_status_ajax() {
@@ -1099,11 +1164,23 @@ class AATG_Text_Generator_Admin {
         }
 
         $status = [
-            'is_processing' => get_option('aatg_is_processing', false),
-            'total_items' => get_option('aatg_processing_total', 0),
-            'current_item' => get_option('aatg_processing_current', 0),
+            'is_processing' => (bool) get_option('aatg_is_processing', false),
+            'total_items' => (int) get_option('aatg_processing_total', 0),
+            'current_item' => (int) get_option('aatg_processing_current', 0),
+            'paused' => AATG_Text_Generator_Restpoint::is_paused(),
         ];
         wp_send_json($status);
+    }
+
+    /** The admin notice's Stop button. Same reset as the Bulk tab's Stop. */
+    public function stop_processing_ajax() {
+        check_ajax_referer('aatg_bulk_notice');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permission denied', 403);
+        }
+        $rest_point = new AATG_Text_Generator_Restpoint();
+        $rest_point->stop_processing();
+        wp_send_json_success();
     }
 
     public function process_next_batch_ajax() {

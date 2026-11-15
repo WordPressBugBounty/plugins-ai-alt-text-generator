@@ -247,6 +247,7 @@ if ( ! function_exists( 'aatg_save_generated_alt_text' ) ) :
 		}
 
 		update_post_meta( $attachment_id, '_wp_attachment_image_alt', $alt_text );
+		delete_post_meta( $attachment_id, '_aatg_unreadable' );
 
 		// Optionally mirror the alt text into the attachment's Title / Caption /
 		// Description when those settings are enabled.
@@ -480,9 +481,11 @@ if ( ! function_exists( 'aatg_managed_generate' ) ) :
 			aatg_managed_flag_at_limit( $upgrade_url );
 		}
 		// Carry the store's upgrade link through so callers can offer a way out
-		// instead of just reporting the failure.
+		// instead of just reporting the failure. The HTTP status tells an image
+		// the provider rejected (400/413) apart from a passing hiccup.
 		return new WP_Error( 'aatg_managed', $err, array(
 			'upgrade_url' => $upgrade_url,
+			'status'      => (int) $code,
 		) );
 	}
 endif;
@@ -503,7 +506,76 @@ endif;
  */
 if ( ! function_exists( 'aatg_is_terminal_managed_error' ) ) :
 	function aatg_is_terminal_managed_error( $code ) {
-		return in_array( (string) $code, array( 'no_credits', 'pending', 'disabled', 'not_found' ), true );
+		return in_array( (string) $code, array( 'no_credits', 'pending', 'disabled', 'not_found', 'paid_account_exists' ), true );
+	}
+endif;
+
+/**
+ * Did the store reject this image itself, rather than the request or account?
+ *
+ * The provider answers 400 for an image it can't read (corrupt, tiny, an
+ * unsupported format) and the store answers 413 for one too large to send.
+ * Asking again gets the same answer, so a bulk run should try such an image
+ * once, not three times on every run.
+ *
+ * @since 2.7.3
+ *
+ * @param int    $status HTTP status from the store.
+ * @param string $error  Error string from the store.
+ * @return bool
+ */
+if ( ! function_exists( 'aatg_managed_is_image_error' ) ) :
+	function aatg_managed_is_image_error( $status, $error ) {
+		if ( ! in_array( (int) $status, array( 400, 413 ), true ) ) {
+			return false;
+		}
+		// The store's own request validation also answers 400.
+		return ! in_array( (string) $error, array( 'Invalid JSON', 'token and image are required' ), true );
+	}
+endif;
+
+/**
+ * Replace a connection key the store no longer recognises.
+ *
+ * A key goes dead when something stores an old one (the <= 2.7.1 settings save
+ * did) or the account is re-issued. 2.7.2 stopped new overwrites but left
+ * already-broken sites stuck: the plugin looked connected, every request
+ * failed, and only Disconnect then Connect got out. Re-register the site the way
+ * auto-connect does: the store matches it by URL, so a free account comes back
+ * with its credits under a new key. A paid account can't be handed a key that
+ * way, so flag it for the paste-your-token prompt instead.
+ *
+ * @since 2.7.3
+ * @return bool True when a working key was stored.
+ */
+if ( ! function_exists( 'aatg_managed_recover_connection' ) ) :
+	function aatg_managed_recover_connection() {
+		$o = aatg_text_generator_get_options();
+		if ( empty( $o['managed_token'] ) || get_transient( 'aatg_managed_recover_backoff' ) ) {
+			return false;
+		}
+		// One attempt per 10 minutes: a store that keeps rejecting the new key
+		// must not trigger a re-register for every image in a bulk run.
+		set_transient( 'aatg_managed_recover_backoff', 1, 10 * MINUTE_IN_SECONDS );
+
+		$o['managed_token'] = '';
+		$res = aatg_managed_register( isset( $o['managed_email'] ) ? $o['managed_email'] : '', home_url() );
+		if ( is_wp_error( $res ) ) {
+			if ( 'paid_account_exists' === $res->get_error_message() ) {
+				$o['managed_awaiting_token'] = true;
+			}
+			// The dead key stays cleared either way, so the General tab offers
+			// Connect instead of a Refresh that can only fail.
+			update_option( 'aatg_text_generator_options', $o );
+			return false;
+		}
+
+		$o['managed_token'] = $res['token'];
+		$o['managed_ref']   = isset( $res['account_ref'] ) ? $res['account_ref'] : '';
+		$o['managed_mode']  = true;
+		update_option( 'aatg_text_generator_options', $o );
+		delete_transient( 'aatg_managed_last_error' );
+		return true;
 	}
 endif;
 
@@ -549,9 +621,68 @@ if ( ! function_exists( 'aatg_managed_status' ) ) :
 		}
 		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
 		if ( 200 === wp_remote_retrieve_response_code( $resp ) && ! empty( $data['ok'] ) ) {
+			aatg_managed_remember_period_end( $data );
 			return $data;
 		}
-		return new WP_Error( 'aatg_managed', isset( $data['error'] ) ? $data['error'] : 'status_failed' );
+		return new WP_Error( 'aatg_managed', isset( $data['error'] ) ? $data['error'] : 'status_failed', array(
+			'status' => (int) wp_remote_retrieve_response_code( $resp ),
+		) );
+	}
+endif;
+
+/**
+ * Remember when the plan's included credits next refill.
+ *
+ * The store sends `period_end` (epoch ms) with every status response. Free
+ * credits refill 30 days after the account's period started, not on the 1st of
+ * the month, so people who run out expect them back on the wrong day unless we
+ * tell them the date.
+ *
+ * @since 2.7.3
+ * @param array $data Decoded /api/credits/status response.
+ * @return void
+ */
+if ( ! function_exists( 'aatg_managed_remember_period_end' ) ) :
+	function aatg_managed_remember_period_end( $data ) {
+		if ( is_array( $data ) && ! empty( $data['period_end'] ) && is_numeric( $data['period_end'] ) ) {
+			update_option( 'aatg_managed_period_end', (int) floor( $data['period_end'] / 1000 ), false );
+		}
+	}
+endif;
+
+/**
+ * When the plan's included credits next refill, as a Unix timestamp.
+ *
+ * @since 2.7.3
+ * @param bool $fetch Ask the store (at most every 5 minutes) when no future date is stored.
+ * @return int Timestamp, or 0 when unknown or already due.
+ */
+if ( ! function_exists( 'aatg_managed_refill_time' ) ) :
+	function aatg_managed_refill_time( $fetch = false ) {
+		$ts = (int) get_option( 'aatg_managed_period_end', 0 );
+		if ( $ts <= time() && $fetch && ! get_transient( 'aatg_managed_period_checked' ) ) {
+			$options = aatg_text_generator_get_options();
+			if ( ! empty( $options['managed_token'] ) ) {
+				set_transient( 'aatg_managed_period_checked', 1, 5 * MINUTE_IN_SECONDS );
+				aatg_managed_status( $options['managed_token'] );
+				$ts = (int) get_option( 'aatg_managed_period_end', 0 );
+			}
+		}
+		return $ts > time() ? $ts : 0;
+	}
+endif;
+
+/**
+ * The refill date formatted with the site's date format, or '' when unknown.
+ *
+ * @since 2.7.3
+ * @param bool $fetch See aatg_managed_refill_time().
+ * @return string
+ */
+if ( ! function_exists( 'aatg_managed_refill_date' ) ) :
+	function aatg_managed_refill_date( $fetch = false ) {
+		$ts = aatg_managed_refill_time( $fetch );
+		return $ts ? wp_date( get_option( 'date_format' ), $ts ) : '';
 	}
 endif;
 
@@ -570,6 +701,14 @@ if ( ! function_exists( 'aatg_managed_error_message' ) ) :
 	function aatg_managed_error_message( $code ) {
 		switch ( (string) $code ) {
 			case 'no_credits':
+				$refill = aatg_managed_refill_date( true );
+				if ( '' !== $refill ) {
+					return sprintf(
+						/* translators: %s: date the plan's credits refill, in the site's date format. */
+						__( "You're out of managed credits. They refill on %s, or upgrade your plan to keep generating alt text now.", 'ai-alt-text-generator' ),
+						$refill
+					);
+				}
 				return __( "You're out of managed credits. Upgrade your plan to keep generating alt text.", 'ai-alt-text-generator' );
 			case 'pending':
 				return __( 'Your managed account is not activated yet. Check your email for the activation link, or reconnect in settings.', 'ai-alt-text-generator' );
@@ -577,6 +716,8 @@ if ( ! function_exists( 'aatg_managed_error_message' ) ) :
 				return __( 'Your managed account is disabled. Please contact support.', 'ai-alt-text-generator' );
 			case 'not_found':
 				return __( 'Your managed connection is invalid. Reconnect the managed credits service in settings.', 'ai-alt-text-generator' );
+			case 'paid_account_exists':
+				return __( 'This site has a paid plan, but its connection key is no longer valid. Sign in to your dashboard, copy your API token, and paste it on the General tab.', 'ai-alt-text-generator' );
 			case '':
 			case 'generation_failed':
 				return __( 'The managed credits service could not generate alt text for this image. Please try again.', 'ai-alt-text-generator' );
@@ -809,6 +950,18 @@ if ( ! function_exists( 'aatg_managed_pre_generate' ) ) :
 		$mime = ! empty( $context['attachment_id'] ) ? get_post_mime_type( (int) $context['attachment_id'] ) : '';
 		$alt  = aatg_managed_generate( $o['managed_token'], $image_base64, $prompt, $language, $mime );
 
+		// The store doesn't know this key. Get a working one and try once more,
+		// so the image (and the rest of a bulk run) goes through instead of
+		// stopping on a connection the user can't see is broken.
+		if ( is_wp_error( $alt ) && 'not_found' === $alt->get_error_message() ) {
+			if ( aatg_managed_recover_connection() ) {
+				$o   = aatg_text_generator_get_options();
+				$alt = aatg_managed_generate( $o['managed_token'], $image_base64, $prompt, $language, $mime );
+			} elseif ( ! empty( aatg_text_generator_get_options()['managed_awaiting_token'] ) ) {
+				$alt = new WP_Error( 'aatg_managed', 'paid_account_exists', array( 'upgrade_url' => '' ) );
+			}
+		}
+
 		if ( is_wp_error( $alt ) ) {
 			// Non-null array short-circuits the provider path with a proper failure
 			// result, so callers surface a real message instead of falling through
@@ -824,6 +977,7 @@ if ( ! function_exists( 'aatg_managed_pre_generate' ) ) :
 				'message'     => aatg_managed_error_message( $code ),
 				'code'        => $code,
 				'upgrade_url' => isset( $data['upgrade_url'] ) ? $data['upgrade_url'] : '',
+				'unreadable'  => aatg_managed_is_image_error( isset( $data['status'] ) ? $data['status'] : 0, $code ),
 			);
 		}
 
@@ -844,3 +998,17 @@ if ( ! function_exists( 'aatg_managed_pre_generate' ) ) :
 	}
 endif;
 add_filter( 'aatg_pre_generate_alt_text', 'aatg_managed_pre_generate', 10, 5 );
+
+/**
+ * Forget that an image couldn't be read once its file changes (re-uploaded,
+ * edited, converted by an optimizer), so the next bulk run tries it again.
+ *
+ * @since 2.7.3
+ */
+if ( ! function_exists( 'aatg_clear_unreadable_on_file_change' ) ) :
+	function aatg_clear_unreadable_on_file_change( $data, $attachment_id ) {
+		delete_post_meta( (int) $attachment_id, '_aatg_unreadable' );
+		return $data;
+	}
+endif;
+add_filter( 'wp_update_attachment_metadata', 'aatg_clear_unreadable_on_file_change', 10, 2 );
